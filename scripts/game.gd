@@ -1,7 +1,7 @@
 extends Node2D
 
-## Alt som har med skjerm og fingre å gjøre. Simuleringen ligger i world.gd
-## og vet ingenting om denne fila.
+## Everything related to screen and fingers. The simulation lives in world.gd
+## and knows nothing about this file.
 
 const STICK_BASE := Vector2(58, Cfg.VH - 56)
 const STICK_RADIUS := 34.0
@@ -24,7 +24,7 @@ var world: World
 var cam := Vector2.ZERO
 var font: Font
 
-# Berøringstilstand
+# Touch state
 var stick_active := false
 var stick_index := -1
 var stick_base := STICK_BASE
@@ -124,10 +124,9 @@ func _pointer_down(index: int, pos: Vector2) -> void:
 	if world.player.active_item != "" and pos.distance_to(ACTIVE_BTN) < ACTIVE_R + 8.0:
 		queued_active = true
 		return
-	# Flytende styrespak: dukker opp der du setter fingeren, hver gang —
-	# ingen "not stick_active"-vakt her. Skulle en enkelt løft-hendelse gå
-	# tapt et sted (kjent Android-kvirk), overtar neste trykk uansett i
-	# stedet for at spaken fryser fast der første trykk landet.
+	# Floating joystick: appears where you put your finger each time —
+	# no "not stick_active" guard here. Should a single lift event get lost
+	# (known Android quirk), the next touch will override instead of freezing.
 	stick_active = true
 	stick_index = index
 	stick_base = pos
@@ -150,7 +149,7 @@ func _pointer_up(index: int) -> void:
 
 
 # =========================================================================
-# Tegning
+# Drawing
 # =========================================================================
 func _draw() -> void:
 	_draw_floor()
@@ -310,7 +309,7 @@ func _draw_madness_veil() -> void:
 
 
 # =========================================================================
-# Tekst-hjelpere
+# Text helpers
 # =========================================================================
 func _text(pos: Vector2, s: String, size: int, col: Color) -> void:
 	draw_string(font, pos, s, HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
@@ -351,14 +350,14 @@ func _draw_hud() -> void:
 	_bar(6, 18, 92, 5, p.sanity_frac(), COL_SAN, COL_SAN_BG)
 	var san := "SAN %d" % int(p.sanity)
 	if p.madness_bonus() > 0.02:
-		san += "   +%d%% skade" % int(p.madness_bonus() * 100.0)
+		san += "   +%d%% dmg" % int(p.madness_bonus() * 100.0)
 	var san_col := COL_DIM
 	if p.sanity_frac() < Cfg.SANITY_LOW:
 		san_col = Color(0.78, 0.59, 0.94)
 	_text(Vector2(102, 24), san, 8, san_col)
 
 	_text(Vector2(6, 34), world.stage()["name"], 8, COL_DIM)
-	_text(Vector2(6, 44), "Nv %d   Drap %d" % [p.level, world.kills], 8, COL_DIM)
+	_text(Vector2(6, 44), "Lv %d   Kills %d" % [p.level, world.kills], 8, COL_DIM)
 
 	var y := 56.0
 	for w in p.weapons:
@@ -389,7 +388,7 @@ func _draw_controls() -> void:
 	var dcol := Color(0.47, 0.78, 0.88) if ready else Color(0.21, 0.24, 0.27)
 	draw_circle(DODGE_BTN, DODGE_R, Color(0.09, 0.09, 0.13))
 	draw_arc(DODGE_BTN, DODGE_R, 0, TAU, 32, dcol, 2.0)
-	_text_center(DODGE_BTN + Vector2(0, 3), "BLINK" if p.blink else "UNNA", 8, dcol)
+	_text_center(DODGE_BTN + Vector2(0, 3), "BLINK" if p.blink else "DODGE", 8, dcol)
 	if not ready:
 		_cooldown_arc(DODGE_BTN, DODGE_R - 4.0,
 			1.0 - p.dodge_timer / max(0.01, p.stats.get_stat("dodge_cooldown")),
@@ -412,7 +411,7 @@ func _draw_controls() -> void:
 
 
 # =========================================================================
-# Overlegg
+# Overlays
 # =========================================================================
 func _perk_rects(count: int) -> Array:
 	var h := 34.0
@@ -439,7 +438,7 @@ func _swap_rects(count: int) -> Array:
 func _draw_weapon_swap() -> void:
 	_veil(0.78)
 	var d: Dictionary = world.pending_swap
-	_text_center(Vector2(Cfg.VW * 0.5, 12), "NYTT VÅPEN: " + str(d.get("name", "")),
+	_text_center(Vector2(Cfg.VW * 0.5, 12), "NEW WEAPON: " + str(d.get("name", "")),
 		11, Color(0.92, 0.91, 0.86))
 	_text_center(Vector2(Cfg.VW * 0.5, 24), str(d.get("desc", "")), 8, COL_DIM)
 
@@ -451,12 +450,12 @@ func _draw_weapon_swap() -> void:
 		draw_rect(r, Color(0.06, 0.08, 0.10))
 		draw_rect(r, Color(0.43, 0.78, 0.88), false, 1.0)
 		_text(Vector2(r.position.x + 8, r.position.y + 12),
-			"Bytt ut: %s (nivå %d)" % [w.wname(), w.level], 9, COL_TEXT)
+			"Replace: %s (level %d)" % [w.wname(), w.level], 9, COL_TEXT)
 		_text(Vector2(r.position.x + 8, r.position.y + 23), w.data()["desc"], 7, COL_DIM)
 	var skip: Rect2 = rects[rects.size() - 1]
 	draw_rect(skip, Color(0.08, 0.06, 0.06))
 	draw_rect(skip, Color(0.55, 0.38, 0.38), false, 1.0)
-	_text_center(skip.get_center(), "Behold arsenalet", 9, COL_TEXT)
+	_text_center(skip.get_center(), "Keep Arsenal", 9, COL_TEXT)
 
 
 func _veil(alpha: float) -> void:
@@ -465,7 +464,7 @@ func _veil(alpha: float) -> void:
 
 func _draw_levelup() -> void:
 	_veil(0.75)
-	_text_center(Vector2(Cfg.VW * 0.5, 30), "NIVÅ %d" % world.player.level, 16,
+	_text_center(Vector2(Cfg.VW * 0.5, 30), "LEVEL %d" % world.player.level, 16,
 		Color(0.92, 0.91, 0.86))
 	var rects := _perk_rects(world.pending_perks.size())
 	for i in range(world.pending_perks.size()):
@@ -479,28 +478,28 @@ func _draw_levelup() -> void:
 			Color(0.91, 0.71, 0.98) if forb else COL_TEXT)
 		_text(Vector2(r.position.x + 8, r.position.y + 27), perk["desc"], 8, COL_DIM)
 		if forb:
-			_text(Vector2(r.end.x - 44, r.position.y + 13), "FORBUDT", 8,
+			_text(Vector2(r.end.x - 44, r.position.y + 13), "FORBIDDEN", 8,
 				Color(0.82, 0.43, 0.90))
 
 
 func _draw_stage_clear() -> void:
 	_veil(0.80)
-	_text_center(Vector2(Cfg.VW * 0.5, 96), "BANEN ER STILLE", 16,
+	_text_center(Vector2(Cfg.VW * 0.5, 96), "STAGE CLEAR", 16,
 		Color(0.92, 0.91, 0.86))
 	_text_center(Vector2(Cfg.VW * 0.5, 122),
-		"Drap: %d   Nivå: %d" % [world.kills, world.player.level], 10, COL_DIM)
-	_text_center(Vector2(Cfg.VW * 0.5, 152), "Trykk for å gå videre", 10,
+		"Kills: %d   Level: %d" % [world.kills, world.player.level], 10, COL_DIM)
+	_text_center(Vector2(Cfg.VW * 0.5, 152), "Tap to continue", 10,
 		Color(0.59, 0.82, 0.90))
 
 
 func _draw_dead() -> void:
 	_veil(0.85)
-	_text_center(Vector2(Cfg.VW * 0.5, 92), "DU ER BORTE", 16,
+	_text_center(Vector2(Cfg.VW * 0.5, 92), "YOU DIED", 16,
 		Color(0.86, 0.35, 0.35))
 	_text_center(Vector2(Cfg.VW * 0.5, 120),
-		"Overlevde %d s  ·  %d drap  ·  nivå %d" % [int(world.time), world.kills,
+		"Survived %d s  ·  %d kills  ·  level %d" % [int(world.time), world.kills,
 			world.player.level], 9, COL_DIM)
-	_text_center(Vector2(Cfg.VW * 0.5, 150), "Trykk for å begynne på nytt", 10,
+	_text_center(Vector2(Cfg.VW * 0.5, 150), "Tap to restart", 10,
 		COL_TEXT)
 
 
@@ -509,11 +508,11 @@ func _draw_paused() -> void:
 	var p := world.player
 	_text_center(Vector2(Cfg.VW * 0.5, 100), "PAUSE", 16, COL_TEXT)
 	var lines := [
-		"Skade x%.2f   Skytefart x%.2f" % [p.stats.get_stat("damage_mult"),
+		"Damage x%.2f   Fire Rate x%.2f" % [p.stats.get_stat("damage_mult"),
 			p.stats.get_stat("fire_rate_mult")],
-		"Rekkevidde x%.2f   Luck %d" % [p.stats.get_stat("range_mult"),
+		"Range x%.2f   Luck %d" % [p.stats.get_stat("range_mult"),
 			int(p.stats.get_stat("luck"))],
-		"Rustning %d   Krit %d%%" % [int(p.stats.get_stat("armor")),
+		"Armor %d   Crit %d%%" % [int(p.stats.get_stat("armor")),
 			int(p.stats.get_stat("crit_chance") * 100.0)],
 	]
 	for i in range(lines.size()):
@@ -521,7 +520,7 @@ func _draw_paused() -> void:
 	var names: Array = []
 	for k in p.items:
 		names.append(Content.ITEMS[k]["name"])
-	var items_txt: String = ", ".join(names) if not names.is_empty() else "ingen"
-	_text_center(Vector2(Cfg.VW * 0.5, 176), "Gjenstander: " + items_txt, 8, COL_DIM)
-	_text_center(Vector2(Cfg.VW * 0.5, 198), "Trykk for å fortsette", 10,
+	var items_txt: String = ", ".join(names) if not names.is_empty() else "none"
+	_text_center(Vector2(Cfg.VW * 0.5, 176), "Items: " + items_txt, 8, COL_DIM)
+	_text_center(Vector2(Cfg.VW * 0.5, 198), "Tap to resume", 10,
 		Color(0.59, 0.82, 0.90))
