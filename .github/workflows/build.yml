@@ -44,12 +44,14 @@ jobs:
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-${{ runner.os }}-
 
-      # Cython må være under 3.0 — ellers feiler p4a-oppskriftene på
-      # longintrepr.h. setuptools pinnes av samme grunn.
+      # Cython MÅ være 3.x. p4a bygger Python 3.14 mot telefonen, og
+      # longintrepr.h finnes ikke lenger fra Python 3.12. Cython 2.x
+      # genererer C-kode som inkluderer den uansett, og pygame-oppskriften
+      # dør på src_c/_sdl2/sdl2.c. Rådet om "Cython<3.0" gjelder gamle p4a.
       - name: Installer buildozer
         run: |
-          python -m pip install --upgrade pip wheel
-          pip install "Cython<3.0" "setuptools<71.0.0" buildozer
+          python -m pip install --upgrade pip wheel setuptools
+          pip install "Cython>=3.0.11" buildozer
 
       - name: Bygg APK
         run: buildozer -v android debug
