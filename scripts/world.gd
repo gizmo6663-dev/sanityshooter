@@ -34,6 +34,8 @@ class Player extends RefCounted:
 	var burn_bonus: float = 0.0
 	var sanity_on_kill: float = 0.0
 	var taken_perks: Dictionary = {}
+    var hp_on_kill: float = 0.0
+    var lifesteal: bool = false
 
 	func _init(p: Vector2) -> void:
 		pos = p
