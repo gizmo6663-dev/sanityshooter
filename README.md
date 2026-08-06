@@ -22,16 +22,35 @@ videre etter en bane, `R` for å starte på nytt.
 ## Bygge APK
 
 `.github/workflows/build.yml` bygger en debug-APK ved hver push til `main` og
-laster den opp som artifact. Lokalt:
+laster den opp som artifact.
+
+Workflowen kjører buildozer **direkte på løperen**, ikke via
+`ArtemSBulgakov/buildozer-action`. Det actionet bygger sitt eget Docker-image
+oppå et basisimage som har gått ut på dato, og da feiler `sudo apt update`
+inne i Dockerfilen med `exit code: 100`. Feilen har ingenting med prosjektet
+å gjøre, og kan ikke fikses fra vår side.
+
+Versjonskombinasjonen i workflowen er ikke tilfeldig:
+
+* **Python 3.11** — p4a-oppskriftene er ikke pålitelige på 3.12 og nyere.
+* **Cython < 3.0** — ellers feiler byggingen på manglende `longintrepr.h`.
+* **setuptools < 71** — nyere versjoner brekker p4a sin hostpython-bygging.
+* **JDK 17** — det Gradle forventer.
+
+Lokalt, samme oppskrift:
 
 ```bash
-pip install buildozer cython
-buildozer android debug
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install "Cython<3.0" "setuptools<71.0.0" buildozer
+buildozer -v android debug
 ```
 
-Merk: p4a-oppskriften `pygame` krever en nyere python-for-android enn den du
-brukte til Kivy-prosjektene. Låser du versjoner i `buildozer.spec`, bruk en
-p4a-branch fra 2024 eller senere.
+Første bygg tar 30–40 minutter fordi SDK, NDK og alle oppskriftene skal
+hentes og kompileres. Cachen i workflowen gjør de neste langt raskere.
+
+Slår det feil på selve `pygame`-oppskriften: den finnes i p4a, men er mindre
+tråkket opp enn Kivy-løypa. Legg byggeloggen i en melding til meg — den
+lastes opp som artifact ved feil — så tar vi den derfra.
 
 ---
 
