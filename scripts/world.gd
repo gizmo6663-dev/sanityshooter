@@ -33,8 +33,8 @@ class Player extends RefCounted:
 	var berserk_bonus: float = 0.0
 	var burn_bonus: float = 0.0
 	var sanity_on_kill: float = 0.0
-	var hp_on_kill: float = 0.0          # new
-	var lifesteal: bool = false          # new
+	var hp_on_kill: float = 0.0
+	var lifesteal: bool = false
 	var taken_perks: Dictionary = {}
 
 	func _init(p: Vector2) -> void:
@@ -43,7 +43,7 @@ class Player extends RefCounted:
 		hp = stats.get_stat("max_hp")
 		sanity = stats.get_stat("max_sanity")
 		xp_need = Cfg.xp_to_next(1)
-		weapons.append(Content.WeaponInst.new(Content.STARTER_WEAPON))
+		weapons.append(WeaponInst.new(Content.STARTER_WEAPON))
 
 	func max_hp() -> float:
 		return stats.get_stat("max_hp")
@@ -894,7 +894,7 @@ func take_drop(drop: Dictionary) -> void:
 				if not existing.maxed():
 					existing.level += 1
 			else:
-				p.weapons.append(Content.WeaponInst.new(key))
+				p.weapons.append(WeaponInst.new(key))
 		"wlevel":
 			for w in p.weapons:
 				if w.wid == key and not w.maxed():
@@ -919,7 +919,7 @@ func choose_swap(index: int) -> void:
 	var p := player
 	if index >= 0 and index < p.weapons.size():
 		var new_wid: String = pending_swap["key"]
-		p.weapons[index] = Content.WeaponInst.new(new_wid)
+		p.weapons[index] = WeaponInst.new(new_wid)
 		_add_floater(p.pos + Vector2(0, -12), "Swapped to " + str(pending_swap["name"]),
 			Color(0.78, 0.70, 1.0), 1.4)
 	else:
