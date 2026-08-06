@@ -33,9 +33,9 @@ class Player extends RefCounted:
 	var berserk_bonus: float = 0.0
 	var burn_bonus: float = 0.0
 	var sanity_on_kill: float = 0.0
+	var hp_on_kill: float = 0.0          # new
+	var lifesteal: bool = false          # new
 	var taken_perks: Dictionary = {}
-    var hp_on_kill: float = 0.0
-    var lifesteal: bool = false
 
 	func _init(p: Vector2) -> void:
 		pos = p
@@ -446,8 +446,6 @@ func _update_enemies(dt: float) -> void:
 func _tick_statuses(e: Enemy, dt: float) -> void:
 	var p := player
 	for name in e.statuses.keys():
-		# Skade nedenfor kan fjerne en status (termisk sjokk spiser "chill")
-		# eller drepe fienden midt i løkka, så vi sjekker på nytt hver runde.
 		if not e.alive:
 			return
 		if not e.statuses.has(name):
@@ -557,7 +555,6 @@ func _fire(w) -> void:
 			hit_list.append(best)
 			points.append(best.pos)
 			origin = best.pos
-			# SYNERGI: kjeden hopper lenger fra et nedkjølt mål — kulde leder.
 			cur_range = rng * (1.5 if best.statuses.has("chill") else 1.0)
 			falloff *= 0.85
 		if points.size() > 1:
@@ -717,7 +714,6 @@ func damage_enemy(e: Enemy, amount: float, tag: String, applies: String,
 	if not silent and randf() < p.stats.get_stat("crit_chance"):
 		crit = true
 		dmg *= p.stats.get_stat("crit_mult")
-		# SYNERGI: kritisk treff forlenger blødning
 		if e.statuses.has("bleed"):
 			e.statuses["bleed"] = float(e.statuses["bleed"]) + Cfg.BLEED_DURATION * 0.5
 
@@ -732,6 +728,11 @@ func damage_enemy(e: Enemy, amount: float, tag: String, applies: String,
 	if not silent and dmg >= 1.0:
 		var col := Color(1.0, 0.86, 0.47) if crit else Color(0.92, 0.92, 0.92)
 		_add_floater(e.pos + Vector2(0, -e.radius - 2), str(int(dmg)), col, 0.55)
+
+	# Lifesteal
+	if p.lifesteal and amount > 0:
+		var heal_amt = max(1.0, amount * 0.05)
+		p.heal(heal_amt)
 
 	if e.hp <= 0.0:
 		_kill(e)
@@ -763,6 +764,13 @@ func _kill(e: Enemy) -> void:
 	elif e.is_phantom():
 		restore = Cfg.SANITY_KILL_PHANTOM
 	p.sanity = min(p.max_sanity(), p.sanity + restore)
+
+	# hp_on_kill
+	if p.hp_on_kill > 0.0:
+		var heal_amt = p.hp_on_kill
+		if e.is_phantom():
+			heal_amt *= 0.5
+		p.heal(heal_amt)
 
 	# SYNERGI: fordervet fiende detonerer ved død, dobbelt hvis den brenner
 	if e.statuses.has("corrupt"):
@@ -799,7 +807,6 @@ func _kill(e: Enemy) -> void:
 		shake = 8.0
 		_boss_dead = true
 		_boss_dead_time = time
-		# Hallusinasjonene løser seg opp når kilden er borte.
 		for o in enemies:
 			if o.is_phantom() and o.alive:
 				o.alive = false
@@ -845,18 +852,18 @@ func _roll_drop() -> Dictionary:
 		if not w.maxed():
 			upgradable.append(w)
 
-	if roll < 0.30 and not new_w.is_empty():
+	# Redusert sjanse for våpen-drops
+	if roll < 0.20 and not new_w.is_empty():   # was 0.30
 		var wid: String = new_w[randi() % new_w.size()]
 		if p.weapons.size() < 5:
 			return {"kind": "weapon", "key": wid, "name": Content.WEAPONS[wid]["name"],
 				"desc": Content.WEAPONS[wid]["desc"], "sprite": "item_weapon"}
-		# Arsenalet er fullt — tilby et bytte i stedet for å kaste bort droppet.
 		return {"kind": "weapon_choice", "key": wid, "name": Content.WEAPONS[wid]["name"],
 			"desc": Content.WEAPONS[wid]["desc"], "sprite": "item_weapon"}
-	if roll < 0.55 and not upgradable.is_empty():
+	if roll < 0.40 and not upgradable.is_empty():  # was 0.55
 		var w2 = upgradable[randi() % upgradable.size()]
 		return {"kind": "wlevel", "key": w2.wid,
-			"name": "%s nivå %d" % [w2.wname(), w2.level + 1],
+			"name": "%s level %d" % [w2.wname(), w2.level + 1],
 			"desc": w2.next_desc(), "sprite": "item_weapon"}
 
 	var pool: Array = []
@@ -899,8 +906,6 @@ func take_drop(drop: Dictionary) -> void:
 		_:
 			p.items.append(key)
 			_apply_effects(Content.ITEMS[key])
-			# Noen items (glasskanon, skjoldkjerne) endrer maks HP/SAN direkte —
-			# hold gjeldende verdi innenfor det nye taket.
 			p.hp = min(p.hp, p.max_hp())
 			p.sanity = min(p.sanity, p.max_sanity())
 	_add_floater(p.pos + Vector2(0, -12), drop["name"], Color(0.78, 0.70, 1.0), 1.4)
@@ -915,10 +920,10 @@ func choose_swap(index: int) -> void:
 	if index >= 0 and index < p.weapons.size():
 		var new_wid: String = pending_swap["key"]
 		p.weapons[index] = Content.WeaponInst.new(new_wid)
-		_add_floater(p.pos + Vector2(0, -12), "Byttet til " + str(pending_swap["name"]),
+		_add_floater(p.pos + Vector2(0, -12), "Swapped to " + str(pending_swap["name"]),
 			Color(0.78, 0.70, 1.0), 1.4)
 	else:
-		_add_floater(p.pos + Vector2(0, -12), "Beholdt arsenalet",
+		_add_floater(p.pos + Vector2(0, -12), "Kept arsenal",
 			Color(0.55, 0.53, 0.52), 1.0)
 	pending_swap = {}
 	state = "playing"
@@ -1050,6 +1055,8 @@ func _apply_effects(d: Dictionary) -> void:
 		p.sanity_on_kill = float(d["sanity_on_kill"])
 	if d.has("berserk_bonus"):
 		p.berserk_bonus = max(p.berserk_bonus, float(d["berserk_bonus"]))
+	if d.has("hp_on_kill"):
+		p.hp_on_kill += float(d["hp_on_kill"])
 	match d.get("flag", ""):
 		"blink":
 			p.blink = true
@@ -1059,6 +1066,8 @@ func _apply_effects(d: Dictionary) -> void:
 			p.universal_corrupt = true
 		"universal_burn":
 			p.universal_burn = true
+		"lifesteal":
+			p.lifesteal = true
 
 
 # =========================================================================
