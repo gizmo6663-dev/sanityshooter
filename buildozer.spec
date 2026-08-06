@@ -1,28 +1,27 @@
 [app]
-title = Eldritch Battlemap
-package.name = eldritchbattlemap
-package.domain = no.gizmo.eldritchbattlemap
+title = Vanvidd
+package.name = vanvidd
+package.domain = org.gizmo6663
 
 source.dir = .
-source.include_exts = py,png,jpg,jpeg,webp,kv,atlas,json
-source.include_patterns = assets/bundled/*/*
-
+source.include_exts = py,png,jpg,ttf,json
 version = 0.1.0
 
-requirements = python3,kivy==2.3.0,pillow,pyjnius,android
+# pygame-ce bygges av p4a-oppskriften "pygame" (SDL2-bootstrap)
+requirements = python3,pygame
 
 orientation = landscape
-fullscreen = 0
+fullscreen = 1
 
-# Storage access for /sdcard/Documents/EldritchBattlemap/
-android.permissions = READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
-
-android.accept_sdk_license = True
-android.api = 33
+android.archs = arm64-v8a
+android.api = 34
 android.minapi = 24
-android.build_tools_version = 33.0.2
-android.archs = arm64-v8a, armeabi-v7a
+android.ndk = 25b
+android.accept_sdk_license = True
+android.enable_androidx = True
 android.allow_backup = True
+
+p4a.bootstrap = sdl2
 
 [buildozer]
 log_level = 2
