@@ -20,6 +20,8 @@ func _initialize() -> void:
 			w.update(1.0 / 60.0, kite(w), i % 150 == 0, true)
 			if w.state == "levelup":
 				w.choose_perk(randi() % w.pending_perks.size())
+			if w.state == "weapon_swap":
+				w.choose_swap(randi() % w.player.weapons.size())
 			if w.state == "stage_clear":
 				print("  bane %d klar t=%ds nv=%d drap=%d san=%d/%d" % [
 					w.stage_index + 1, int(w.time), w.player.level, w.kills,

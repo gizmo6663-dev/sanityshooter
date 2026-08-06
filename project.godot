@@ -20,7 +20,9 @@ window/handheld/orientation="landscape"
 
 [input_devices]
 
-pointing/emulate_touch_from_mouse=true
+; Av: dette er kun til musetesting på PC. På en telefon med ekte
+; berøringsskjerm er det bare en ekstra kilde til dobbel input.
+pointing/emulate_touch_from_mouse=false
 
 [rendering]
 
