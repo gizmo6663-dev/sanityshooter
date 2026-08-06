@@ -29,6 +29,8 @@ class Player extends RefCounted:
 	var thorns: float = 0.0
 	var madness_scale: float = 1.0
 	var universal_corrupt: bool = false
+	var universal_burn: bool = false
+	var berserk_bonus: float = 0.0
 	var burn_bonus: float = 0.0
 	var sanity_on_kill: float = 0.0
 	var taken_perks: Dictionary = {}
@@ -141,6 +143,7 @@ class Effect extends RefCounted:
 	var life: float = 0.3
 	var age: float = 0.0
 	var to: Vector2 = Vector2.ZERO
+	var points: Array = []   # brukt av "chain" (kjedepunkter) og "cone" (trekant)
 
 
 class Floater extends RefCounted:
@@ -162,8 +165,9 @@ var pickups: Array = []
 var effects: Array = []
 var floaters: Array = []
 
-var state: String = "playing"   # playing | levelup | paused | dead | stage_clear
+var state: String = "playing"   # playing | levelup | paused | dead | stage_clear | weapon_swap
 var pending_perks: Array = []
+var pending_swap: Dictionary = {}
 
 var stage_index: int = 0
 var loop: int = 0
@@ -490,8 +494,11 @@ func _fire(w) -> void:
 	var dmg: float = w.stat("damage")
 	var tag: String = d["tag"]
 	var applies: String = d.get("applies", "")
-	if p.universal_corrupt and applies == "":
-		applies = "corrupt"
+	if applies == "":
+		if p.universal_corrupt:
+			applies = "corrupt"
+		elif p.universal_burn:
+			applies = "burn"
 
 	if beh == "aura":
 		var r := rng * area
@@ -523,6 +530,53 @@ func _fire(w) -> void:
 			pr.orbit_speed = ospeed
 			projectiles.append(pr)
 		w.orbit_phase += 0.7
+		return
+
+	if beh == "chain":
+		var jumps: int = int(w.stat("count"))
+		var hit_list: Array = []
+		var points: Array = [p.pos]
+		var origin: Vector2 = p.pos
+		var cur_range := rng
+		var falloff := 1.0
+		for i in range(jumps):
+			var best: Enemy = null
+			var bd := cur_range * cur_range
+			for e in query(origin, cur_range):
+				if hit_list.has(e):
+					continue
+				var dd: float = origin.distance_squared_to(e.pos)
+				if dd < bd:
+					best = e
+					bd = dd
+			if best == null:
+				break
+			damage_enemy(best, dmg * falloff, tag, applies, Vector2.ZERO, false)
+			hit_list.append(best)
+			points.append(best.pos)
+			origin = best.pos
+			# SYNERGI: kjeden hopper lenger fra et nedkjølt mål — kulde leder.
+			cur_range = rng * (1.5 if best.statuses.has("chill") else 1.0)
+			falloff *= 0.85
+		if points.size() > 1:
+			var cfx := _add_effect(p.pos, "chain", 0.0, 0.18)
+			cfx.points = points
+		return
+
+	if beh == "cone":
+		var dir: Vector2 = p.facing
+		var half_angle: float = d["spread"] * 0.5
+		for e in query(p.pos, rng):
+			var to_e: Vector2 = e.pos - p.pos
+			var edist: float = to_e.length()
+			if edist > rng + e.radius:
+				continue
+			if edist > 0.01 and absf(dir.angle_to(to_e.normalized())) > half_angle:
+				continue
+			damage_enemy(e, dmg, tag, applies, Vector2.ZERO, false)
+		var cone_fx := _add_effect(p.pos, "cone", rng, 0.12)
+		cone_fx.points = [p.pos, p.pos + dir.rotated(half_angle) * rng,
+			p.pos + dir.rotated(-half_angle) * rng]
 		return
 
 	var target := nearest_enemy(p.pos, rng)
@@ -644,6 +698,8 @@ func damage_enemy(e: Enemy, amount: float, tag: String, applies: String,
 	var p := player
 	var dmg := amount * p.stats.get_stat("damage_mult") * p.stats.tag(tag)
 	dmg *= 1.0 + p.madness_bonus()
+	if p.berserk_bonus > 0.0 and p.hp < p.max_hp() * 0.5:
+		dmg *= 1.0 + p.berserk_bonus
 
 	# SYNERGI: ild på nedkjølt fiende gir termisk sjokk
 	if tag == "fire" and e.statuses.has("chill"):
@@ -695,6 +751,16 @@ func _kill(e: Enemy) -> void:
 	e.alive = false
 	kills += 1
 	var p := player
+
+	# Ethvert drap gir litt SAN tilbake — jo farligere fienden var, jo mer.
+	var restore := Cfg.SANITY_KILL_NORMAL
+	if e.is_boss():
+		restore = Cfg.SANITY_KILL_BOSS
+	elif e.is_elite():
+		restore = Cfg.SANITY_KILL_ELITE
+	elif e.is_phantom():
+		restore = Cfg.SANITY_KILL_PHANTOM
+	p.sanity = min(p.max_sanity(), p.sanity + restore)
 
 	# SYNERGI: fordervet fiende detonerer ved død, dobbelt hvis den brenner
 	if e.statuses.has("corrupt"):
@@ -777,9 +843,13 @@ func _roll_drop() -> Dictionary:
 		if not w.maxed():
 			upgradable.append(w)
 
-	if roll < 0.30 and not new_w.is_empty() and p.weapons.size() < 5:
+	if roll < 0.30 and not new_w.is_empty():
 		var wid: String = new_w[randi() % new_w.size()]
-		return {"kind": "weapon", "key": wid, "name": Content.WEAPONS[wid]["name"],
+		if p.weapons.size() < 5:
+			return {"kind": "weapon", "key": wid, "name": Content.WEAPONS[wid]["name"],
+				"desc": Content.WEAPONS[wid]["desc"], "sprite": "item_weapon"}
+		# Arsenalet er fullt — tilby et bytte i stedet for å kaste bort droppet.
+		return {"kind": "weapon_choice", "key": wid, "name": Content.WEAPONS[wid]["name"],
 			"desc": Content.WEAPONS[wid]["desc"], "sprite": "item_weapon"}
 	if roll < 0.55 and not upgradable.is_empty():
 		var w2 = upgradable[randi() % upgradable.size()]
@@ -827,7 +897,29 @@ func take_drop(drop: Dictionary) -> void:
 		_:
 			p.items.append(key)
 			_apply_effects(Content.ITEMS[key])
+			# Noen items (glasskanon, skjoldkjerne) endrer maks HP/SAN direkte —
+			# hold gjeldende verdi innenfor det nye taket.
+			p.hp = min(p.hp, p.max_hp())
+			p.sanity = min(p.sanity, p.max_sanity())
 	_add_floater(p.pos + Vector2(0, -12), drop["name"], Color(0.78, 0.70, 1.0), 1.4)
+
+
+## Kalt fra UI når spilleren har fått tilbud om å bytte et våpen. index er
+## hvilket av de nåværende våpnene som byttes ut, eller -1 for å beholde alt.
+func choose_swap(index: int) -> void:
+	if state != "weapon_swap":
+		return
+	var p := player
+	if index >= 0 and index < p.weapons.size():
+		var new_wid: String = pending_swap["key"]
+		p.weapons[index] = Content.WeaponInst.new(new_wid)
+		_add_floater(p.pos + Vector2(0, -12), "Byttet til " + str(pending_swap["name"]),
+			Color(0.78, 0.70, 1.0), 1.4)
+	else:
+		_add_floater(p.pos + Vector2(0, -12), "Beholdt arsenalet",
+			Color(0.55, 0.53, 0.52), 1.0)
+	pending_swap = {}
+	state = "playing"
 
 
 # =========================================================================
@@ -870,7 +962,11 @@ func _collect(it: Pickup) -> void:
 			_add_floater(p.pos + Vector2(0, -8), "+%d" % it.value,
 				Color(0.47, 0.90, 0.55))
 		"item":
-			take_drop(it.payload)
+			if it.payload.get("kind", "") == "weapon_choice":
+				pending_swap = it.payload
+				state = "weapon_swap"
+			else:
+				take_drop(it.payload)
 
 
 # =========================================================================
@@ -950,6 +1046,8 @@ func _apply_effects(d: Dictionary) -> void:
 		p.burn_bonus += float(d["burn_bonus"])
 	if d.has("sanity_on_kill"):
 		p.sanity_on_kill = float(d["sanity_on_kill"])
+	if d.has("berserk_bonus"):
+		p.berserk_bonus = max(p.berserk_bonus, float(d["berserk_bonus"]))
 	match d.get("flag", ""):
 		"blink":
 			p.blink = true
@@ -957,6 +1055,8 @@ func _apply_effects(d: Dictionary) -> void:
 			p.madness_scale *= 2.0
 		"universal_corrupt":
 			p.universal_corrupt = true
+		"universal_burn":
+			p.universal_burn = true
 
 
 # =========================================================================

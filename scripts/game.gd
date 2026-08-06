@@ -107,6 +107,13 @@ func _pointer_down(index: int, pos: Vector2) -> void:
 			stick_index = -1
 			stick_dir = Vector2.ZERO
 			return
+		"weapon_swap":
+			var rects := _swap_rects(world.player.weapons.size() + 1)
+			for i in range(rects.size()):
+				if rects[i].has_point(pos):
+					world.choose_swap(-1 if i == rects.size() - 1 else i)
+					return
+			return
 
 	if pos.distance_to(PAUSE_BTN) < 14.0:
 		world.state = "paused"
@@ -117,11 +124,14 @@ func _pointer_down(index: int, pos: Vector2) -> void:
 	if world.player.active_item != "" and pos.distance_to(ACTIVE_BTN) < ACTIVE_R + 8.0:
 		queued_active = true
 		return
-	if not stick_active:
-		stick_active = true
-		stick_index = index
-		stick_base = pos
-		stick_dir = Vector2.ZERO
+	# Flytende styrespak: dukker opp der du setter fingeren, hver gang —
+	# ingen "not stick_active"-vakt her. Skulle en enkelt løft-hendelse gå
+	# tapt et sted (kjent Android-kvirk), overtar neste trykk uansett i
+	# stedet for at spaken fryser fast der første trykk landet.
+	stick_active = true
+	stick_index = index
+	stick_base = pos
+	stick_dir = Vector2.ZERO
 
 
 func _pointer_move(index: int, pos: Vector2) -> void:
@@ -157,6 +167,7 @@ func _draw() -> void:
 		"stage_clear": _draw_stage_clear()
 		"dead": _draw_dead()
 		"paused": _draw_paused()
+		"weapon_swap": _draw_weapon_swap()
 
 
 func _blit(sprite_name: String, world_pos: Vector2, tex: Texture2D = null) -> void:
@@ -270,6 +281,18 @@ func _draw_effects() -> void:
 			"poof":
 				draw_arc(c, 6.0 * (1.0 - t), 0, TAU, 16,
 					Color(0.78, 0.86, 0.94), 1.0)
+			"chain":
+				var pts: Array = fx.points
+				for i in range(pts.size() - 1):
+					draw_line(pts[i] - cam, pts[i + 1] - cam,
+						Color(1.0, 0.92, 0.55), 2.0 * (1.0 - t))
+				for pt in pts:
+					draw_circle(pt - cam, 2.0, Color(1.0, 0.96, 0.75))
+			"cone":
+				var tri: Array = fx.points
+				var poly := PackedVector2Array([tri[0] - cam, tri[1] - cam, tri[2] - cam])
+				var col := Color(0.94, 0.55, 0.25, 0.35 * (1.0 - t))
+				draw_colored_polygon(poly, col)
 
 
 func _draw_floaters() -> void:
@@ -400,6 +423,40 @@ func _perk_rects(count: int) -> Array:
 	for i in range(count):
 		out.append(Rect2(46, top + i * (h + gap), Cfg.VW - 92, h))
 	return out
+
+
+func _swap_rects(count: int) -> Array:
+	var h := 28.0
+	var gap := 4.0
+	var total: float = count * h + max(0, count - 1) * gap
+	var top: float = max(40.0, (Cfg.VH - total) * 0.5 + 12.0)
+	var out: Array = []
+	for i in range(count):
+		out.append(Rect2(40, top + i * (h + gap), Cfg.VW - 80, h))
+	return out
+
+
+func _draw_weapon_swap() -> void:
+	_veil(0.78)
+	var d: Dictionary = world.pending_swap
+	_text_center(Vector2(Cfg.VW * 0.5, 12), "NYTT VÅPEN: " + str(d.get("name", "")),
+		11, Color(0.92, 0.91, 0.86))
+	_text_center(Vector2(Cfg.VW * 0.5, 24), str(d.get("desc", "")), 8, COL_DIM)
+
+	var p := world.player
+	var rects := _swap_rects(p.weapons.size() + 1)
+	for i in range(p.weapons.size()):
+		var w = p.weapons[i]
+		var r: Rect2 = rects[i]
+		draw_rect(r, Color(0.06, 0.08, 0.10))
+		draw_rect(r, Color(0.43, 0.78, 0.88), false, 1.0)
+		_text(Vector2(r.position.x + 8, r.position.y + 12),
+			"Bytt ut: %s (nivå %d)" % [w.wname(), w.level], 9, COL_TEXT)
+		_text(Vector2(r.position.x + 8, r.position.y + 23), w.data()["desc"], 7, COL_DIM)
+	var skip: Rect2 = rects[rects.size() - 1]
+	draw_rect(skip, Color(0.08, 0.06, 0.06))
+	draw_rect(skip, Color(0.55, 0.38, 0.38), false, 1.0)
+	_text_center(skip.get_center(), "Behold arsenalet", 9, COL_TEXT)
 
 
 func _veil(alpha: float) -> void:

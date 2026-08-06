@@ -57,6 +57,12 @@ const CORRUPT_BLAST_DAMAGE := 22.0
 const CORRUPT_BLAST_RADIUS := 34.0
 const THERMAL_SHOCK_MULT := 2.2
 
+# Sanity fra drap — insentiverer aggressivt spill i stedet for å flykte.
+const SANITY_KILL_NORMAL := 0.6
+const SANITY_KILL_ELITE := 2.5
+const SANITY_KILL_BOSS := 12.0
+const SANITY_KILL_PHANTOM := 2.0
+
 # Drops
 const ELITE_DROP_CHANCE := 0.35
 const BOSS_DROP_COUNT := 2

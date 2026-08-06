@@ -228,6 +228,39 @@ const ART := {
 		"nwnwn",
 		".nnn.",
 	],
+	"item_glass": [
+		".r.r.",
+		"rRwRr",
+		".rwr.",
+		"..r..",
+	],
+	"item_tank": [
+		".ggg.",
+		"gbbbg",
+		"gbwbg",
+		".gbg.",
+		"..g..",
+	],
+	"item_zerk": [
+		".RRR.",
+		"RkwkR",
+		"RkskR",
+		".RRR.",
+	],
+	"item_haste": [
+		"..y..",
+		".yy..",
+		"yyyyy",
+		"..yy.",
+		".y...",
+	],
+	"item_wildfire": [
+		"..f..",
+		".fFf.",
+		"fFfFf",
+		".fFf.",
+		"..f..",
+	],
 }
 
 static var _cache: Dictionary = {}
