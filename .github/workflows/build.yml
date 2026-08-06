@@ -1,4 +1,4 @@
-name: Build APK
+name: Bygg APK
 
 on:
   push:
@@ -8,21 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: kivy/buildozer:1.5.0  # Pinnet til versjon med Python 3.11
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Pin cython (pyjnius compat)
-        run: pip install "cython<3.0"
+      - name: Cache buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
 
-      - name: Build APK
-        run: buildozer -v android debug
+      - name: Bygg med buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
 
-      - name: Upload APK
+      - name: Last opp APK
         uses: actions/upload-artifact@v4
         with:
-          name: eldritch-battlemap-apk
-          path: bin/*.apk
+          name: vanvidd-debug-apk
+          path: ${{ steps.buildozer.outputs.filename }}
