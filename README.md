@@ -32,16 +32,20 @@ inne i Dockerfilen med `exit code: 100`. Feilen har ingenting med prosjektet
 
 Versjonskombinasjonen i workflowen er ikke tilfeldig:
 
-* **Python 3.11** — p4a-oppskriftene er ikke pålitelige på 3.12 og nyere.
-* **Cython < 3.0** — ellers feiler byggingen på manglende `longintrepr.h`.
-* **setuptools < 71** — nyere versjoner brekker p4a sin hostpython-bygging.
+* **Python 3.11 på løperen** — verten som kjører buildozer. Ikke det samme
+  som Python-versjonen som havner i APK-en.
+* **Cython 3.x** — p4a bygger Python 3.14 mot telefonen, og `longintrepr.h`
+  ble fjernet fra de offentlige headerne i Python 3.12. Cython 2.x genererer
+  C-kode som inkluderer den headeren uansett, og da dør pygame-oppskriften på
+  `src_c/_sdl2/sdl2.c`. Rådet om `Cython<3.0` som ligger overalt på nettet
+  gjelder eldre p4a, og er aktivt skadelig her.
 * **JDK 17** — det Gradle forventer.
 
 Lokalt, samme oppskrift:
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate
-pip install "Cython<3.0" "setuptools<71.0.0" buildozer
+pip install "Cython>=3.0.11" buildozer
 buildozer -v android debug
 ```
 
