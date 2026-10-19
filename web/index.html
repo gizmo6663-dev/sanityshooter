@@ -5,25 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>Dypet</title>
   <link rel="stylesheet" href="style.css">
-  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
   <div id="stage"></div>
-  <div id="vignette"></div>
   <div id="hurt-flash"></div>
 
   <!-- In-game HUD -->
   <div id="hud" class="hidden">
-    <div class="hud-top">
-      <div class="hud-left">
-        <div id="hearts" class="hearts"></div>
-        <div class="hud-line"><span class="coin">¢</span> <b id="hud-coins">0</b> <span class="floor-name" id="hud-floor">Kjelleren I</span></div>
-      </div>
-      <canvas id="minimap" width="160" height="160"></canvas>
-    </div>
-    <div class="xp"><div id="xp-fill"></div><span id="xp-level">1</span></div>
-    <div id="boss-bar" class="boss-bar hidden"><div class="boss-name" id="boss-name"></div><div class="bar"><div id="boss-fill"></div></div></div>
-    <div id="hud-items" class="hud-items"></div>
     <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
     <div id="stick" class="stick hidden"><div id="knob" class="knob"></div></div>
     <button id="btn-dash" class="dash" aria-label="Dash"><div id="dash-ring" class="dash-ring"></div><span>DASH</span></button>

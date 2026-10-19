@@ -4,7 +4,7 @@
 import { Cfg } from './config.js';
 import { World } from './world.js';
 import { Progress } from './progress.js';
-import { Renderer } from './render.js';
+import { Renderer } from './render2d.js';
 import { ITEMS, PERKS, TRANSFORMS, activeTransforms } from './items.js';
 import { ENEMIES } from './enemies.js';
 import { sfx, unlockAudio } from './audio.js';
@@ -21,7 +21,7 @@ let mode = 'title';          // title | play | levelup | pause | end
 // --- Input -------------------------------------------------------------------
 const input = { mx: 0, mz: 0, dash: false, stick: null, ox: 0, oy: 0, keys: {} };
 const STICK_R = 50;
-const canvas = renderer.renderer.domElement;
+const canvas = renderer.canvas;
 
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();
@@ -205,74 +205,22 @@ window.handleBack = () => {
 document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') openPause(); });
 
 // --- HUD ------------------------------------------------------------------------
-const HEART_PATH = 'M10 17 C4 12 1 9 1 5.5 C1 3 3 1 5.5 1 C7.5 1 9 2.2 10 4 C11 2.2 12.5 1 14.5 1 C17 1 19 3 19 5.5 C19 9 16 12 10 17Z';
-function heartSvg(kind) {
-  const fill = kind === 'full' ? '#a8141c' : kind === 'half' ? 'url(#half)' : 'rgba(0,0,0,0.5)';
-  return `<svg class="heart" viewBox="0 0 20 18"><defs><linearGradient id="half"><stop offset="50%" stop-color="#a8141c"/><stop offset="50%" stop-color="rgba(0,0,0,0.5)"/></linearGradient></defs>
-    <path d="${HEART_PATH}" fill="${fill}" stroke="#2a0606" stroke-width="1.4"/></svg>`;
-}
-
-let shown = {};
 function updateHud() {
+  // Hearts, coins, xp, minimap and the boss bar are drawn in pixels by the
+  // renderer; only the dash button's cooldown ring lives in HTML.
   const p = world.player, s = world.stats;
-  const hk = `${p.hp}/${s.maxHp}`;
-  if (shown.hearts !== hk) {
-    shown.hearts = hk;
-    let h = '';
-    for (let i = 0; i < s.maxHp / 2; i++) {
-      const v = p.hp - i * 2;
-      h += heartSvg(v >= 2 ? 'full' : v === 1 ? 'half' : 'empty');
-    }
-    $('hearts').innerHTML = h;
-  }
-  if (shown.coins !== p.coins) { shown.coins = p.coins; $('hud-coins').textContent = p.coins; }
-  const fn = `${FLOOR_NAMES[world.floor]} ${['I', 'II', 'III', 'IV'][world.floor]}`;
-  if (shown.floor !== fn) { shown.floor = fn; $('hud-floor').textContent = fn; }
-  $('xp-fill').style.width = `${Math.min(100, (100 * p.xp) / p.xpNext)}%`;
-  if (shown.level !== p.level) { shown.level = p.level; $('xp-level').textContent = `nivå ${p.level}`; }
-  if (shown.items !== world.items.length) {
-    shown.items = world.items.length;
-    $('hud-items').innerHTML = world.items.map((id) => `<span>${ITEMS[id].icon}</span>`).join('');
-  }
   const cd = p.dashCd / (Cfg.DASH_COOLDOWN * s.dashCooldownMult);
   $('btn-dash').classList.toggle('cooling', cd > 0);
   $('dash-ring').style.background = cd > 0 ? `conic-gradient(rgba(216,207,188,0.5) ${(1 - cd) * 360}deg, transparent 0deg)` : 'none';
   $('dash-ring').style.webkitMask = 'radial-gradient(circle, transparent 60%, #000 62%)';
-  const boss = world.enemies.find((e) => e.boss);
-  show('boss-bar', !!boss);
-  if (boss) $('boss-fill').style.width = `${Math.max(0, (100 * boss.hp) / boss.maxHp)}%`;
-  if (world.roomKey !== shown.room || world.room.cleared !== shown.cleared) {
-    shown.room = world.roomKey; shown.cleared = world.room.cleared;
-    drawMinimap();
-  }
 }
 
-function drawMinimap() {
-  const c = $('minimap'), g = c.getContext('2d');
-  g.clearRect(0, 0, c.width, c.height);
-  const cur = world.room;
-  const cell = 26, cw = 22, ch = 16;
-  const cx = c.width / 2, cy = c.height / 2;
-  for (const r of world.dungeon.rooms.values()) {
-    if (!r.visited && !r.seen) continue;
-    const x = cx + (r.gx - cur.gx) * cell - cw / 2;
-    const y = cy - (r.gy - cur.gy) * (ch + 6) - ch / 2;
-    if (x < -cw || y < -ch || x > c.width || y > c.height) continue;
-    g.fillStyle = r === cur ? '#e8e0d0' : r.visited ? '#6a6258' : 'rgba(40,36,32,0.9)';
-    g.strokeStyle = 'rgba(0,0,0,0.9)';
-    g.lineWidth = 2;
-    g.fillRect(x, y, cw, ch);
-    g.strokeRect(x, y, cw, ch);
-    const icon = { boss: '☠', treasure: '♛', shop: '¢' }[r.type];
-    if (icon) {
-      g.font = 'bold 13px Georgia, serif';
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.fillStyle = r.type === 'boss' ? '#c4262c' : '#d8b25a';
-      g.fillText(icon, x + cw / 2, y + ch / 2 + 1);
-    }
-  }
+function placeButtons() {
+  $('btn-pause').style.top = `${renderer.hudBottomCss + 4}px`;
 }
+window.addEventListener('resize', placeButtons);
+placeButtons();
+
 
 // --- Events from the world -----------------------------------------------------------
 let lastFloor = -1, endTimer = 0;
@@ -309,7 +257,6 @@ function handleEvents() {
       }
       case 'boss':
         sfx.boss();
-        $('boss-name').textContent = e.name.toUpperCase();
         announce(e.name, 'Den har ventet på deg.');
         break;
       case 'bossdead': announce('Seier', world.floor + 1 < Cfg.FLOORS ? 'En luke åpner seg i gulvet …' : ''); break;

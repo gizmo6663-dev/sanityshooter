@@ -1,4 +1,4 @@
-// The whole simulation of a run. Knows nothing about three.js, the DOM or
+// The whole simulation of a run. Knows nothing about drawing, the DOM or
 // input: main.js feeds it a movement vector and a dash flag, the renderer
 // reads the fields below. Runs in Node for the balance bot.
 //
@@ -33,7 +33,7 @@ export class World {
       x: 0, z: 0, r: Cfg.PLAYER_R, hp: Cfg.PLAYER_HP, coins: 0,
       xp: 0, level: 1, xpNext: Cfg.XP_FIRST,
       vx: 0, vz: 0, fireCd: 0, dashT: 0, dashCd: 0, dashX: 0, dashZ: 1, iframes: 0,
-      faceX: 0, faceZ: 1, aimX: 0, aimZ: 1, moving: false, leechCount: 0, dashHit: new Set(),
+      faceX: 0, faceZ: -1, aimX: 0, aimZ: -1, moving: false, leechCount: 0, dashHit: new Set(),
     };
     this.enemies = [];
     this.shots = [];

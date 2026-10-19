@@ -1,6 +1,6 @@
 // All tuning numbers in one place. Start here when something feels off.
 // World units: x runs left-right, z runs "up" the screen (north). The
-// renderer maps z to -Z in three.js. Rooms are taller than wide so they fit
+// renderer draws z upwards on screen. Rooms are taller than wide so they fit
 // a phone held upright.
 
 export const Cfg = {

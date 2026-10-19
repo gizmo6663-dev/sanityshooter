@@ -6,7 +6,7 @@ gjennom fire etasjer med kjellere, katakomber og benhus. Du skyter automatisk.
 Du styrer, dasher unna skudd, samler gjenstander som virker sammen, og
 prøver å nå bunnen.
 
-Laget med Three.js (WebGL) og pakket som en Android-app. GitHub Actions
+Pikselgrafikk tegnet med Canvas 2D, pakket som en Android-app. GitHub Actions
 bygger APK-en automatisk.
 
 ---
@@ -78,18 +78,24 @@ web/js/dungeon.js    Generering av etasjer: romkart, steinmønstre, fiender.
 web/js/enemies.js    Fiendetyper og oppførsel, inkludert bossen.
 web/js/items.js      Gjenstander, velsignelser (level-up) og forvandlinger.
 web/js/world.js      Simuleringen: bevegelse, kollisjon, skudd, statuser, rom.
-web/js/models.js     3D-modeller og teksturer, bygget i kode (ingen asset-filer).
-web/js/render.js     Three.js-scenen: rom, kamera, lys, fiender, effekter.
-web/js/main.js       Skjermer, joystick, HUD, minikart og hovedløkka.
+web/js/render2d.js   Pikselrendereren: rom, figurer, effekter, HUD og minikart.
+web/js/sprites.js    Alle figurer og ting, tegnet i kode (Canvas 2D).
+web/js/roomart.js    Tegner rom: steinvegger, døråpninger, gulvheller, mose.
+web/js/pixel.js      Gjør tegningene om til piksler: palett, dithering, omriss, lys.
+web/js/font.js       Liten 3x5 pikselfont for HUD-en.
+web/js/main.js       Skjermer, joystick og hovedløkka.
 web/js/audio.js      Syntetiske lydeffekter.
-web/js/gfx.js        Små hjelpefunksjoner for geometri og teksturer.
-web/vendor/          three.js r169 (MIT).
 app/                 Android-skallet: én WebView som laster web/ fra APK-en.
 tools/balance.mjs    Balansetest uten grafikk.
 ```
 
-Spillogikken (`world.js`) kjenner verken DOM eller three.js, så den kan
+Spillogikken (`world.js`) kjenner verken DOM eller tegning, så den kan
 kjøres i Node.
+
+Grafikken tegnes i lav oppløsning (rundt 200 piksler bredt) og forstørres med
+et helt tall, så pikslene holder seg skarpe. Hvert rom males én gang og
+lagres; figurene gjengis én gang per animasjonsbilde og lagres.
+`style-mock.html` og `pixel-mock.html` viser stilskissene.
 
 ## Balansetest
 

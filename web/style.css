@@ -7,7 +7,7 @@
   --gold: #d8b25a;
   --ink: #0b0909;
   --panel: rgba(16, 12, 11, 0.92);
-  --serif: Georgia, "Times New Roman", "Noto Serif", serif;
+  --serif: "Courier New", "Noto Sans Mono", "DejaVu Sans Mono", monospace;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }

@@ -945,3 +945,92 @@ export function puddle(ctx, x, y, s, seed = 1) {
   ctx.fillStyle = 'rgba(200,220,230,0.18)';
   ctx.beginPath(); ctx.ellipse(x - 0.15 * s, y - 0.06 * s, 0.18 * s, 0.04 * s, -0.1, 0, Math.PI * 2); ctx.fill();
 }
+
+export function trapdoor(ctx, x, y, s) {
+  const w = 0.7 * s, h = 0.55 * s, cy = y - 0.2 * s;
+  ctx.fillStyle = '#3a2416';
+  ctx.fillRect(x - w - 0.1 * s, cy - h - 0.1 * s, (w + 0.1 * s) * 2, (h + 0.1 * s) * 2);
+  ink(ctx, s, 0.05);
+  ctx.strokeRect(x - w - 0.1 * s, cy - h - 0.1 * s, (w + 0.1 * s) * 2, (h + 0.1 * s) * 2);
+  const g = ctx.createLinearGradient(0, cy - h, 0, cy + h);
+  g.addColorStop(0, '#000'); g.addColorStop(1, '#1a0e08');
+  ctx.fillStyle = g;
+  ctx.fillRect(x - w, cy - h, w * 2, h * 2);
+  // ladder going down
+  ctx.strokeStyle = '#6a4a30';
+  ctx.lineWidth = s * 0.05;
+  for (const sx of [-0.25, 0.25]) { ctx.beginPath(); ctx.moveTo(x + sx * s, cy - h); ctx.lineTo(x + sx * 0.7 * s, cy + h * 0.6); ctx.stroke(); }
+  for (let k = 0; k < 3; k++) { const ly = cy - h * 0.6 + k * h * 0.5; ctx.beginPath(); ctx.moveTo(x - 0.24 * s, ly); ctx.lineTo(x + 0.24 * s, ly); ctx.stroke(); }
+}
+
+/** A wooden door closing a doorway. dir: n | s | e | w. */
+export function closedDoor(ctx, x, y, s, dir, style = 'normal') {
+  const wood = style === 'boss' ? ['#7a2a24', '#4a1410'] : style === 'treasure' ? ['#a07a30', '#5a4010'] : ['#7a5236', '#4e321f'];
+  ink(ctx, s, 0.05);
+  if (dir === 'n') {
+    const w = 1.36 * s, h = 1.5 * s;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y);
+    ctx.lineTo(x - w / 2, y - h * 0.5);
+    ctx.arc(x, y - h * 0.5, w / 2, Math.PI, 0);
+    ctx.lineTo(x + w / 2, y);
+    ctx.closePath();
+    const g = ctx.createLinearGradient(x - w / 2, 0, x + w / 2, 0);
+    g.addColorStop(0, wood[0]); g.addColorStop(1, wood[1]);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.stroke();
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle = 'rgba(20,10,5,0.6)';
+    ctx.lineWidth = s * 0.03;
+    for (let k = -2; k <= 2; k++) { ctx.beginPath(); ctx.moveTo(x + k * w / 5, y - h); ctx.lineTo(x + k * w / 5, y); ctx.stroke(); }
+    ctx.fillStyle = '#3a3a40';
+    for (const by of [0.3, 0.75]) ctx.fillRect(x - w / 2, y - h * by - 0.04 * s, w, 0.08 * s);
+    ctx.restore();
+    ctx.fillStyle = '#d8b25a';
+    ctx.beginPath(); ctx.arc(x + w * 0.3, y - h * 0.4, 0.05 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  } else if (dir === 's') {
+    ctx.fillStyle = wood[1];
+    ctx.fillRect(x - 0.7 * s, y, 1.4 * s, 0.25 * s);
+    ctx.strokeRect(x - 0.7 * s, y, 1.4 * s, 0.25 * s);
+  } else {
+    ctx.fillStyle = wood[1];
+    const xx = dir === 'w' ? x - 0.25 * s : x;
+    ctx.fillRect(xx, y - 0.7 * s, 0.25 * s, 1.4 * s);
+    ctx.strokeRect(xx, y - 0.7 * s, 0.25 * s, 1.4 * s);
+  }
+}
+
+export function xpGem(ctx, x, y, s) {
+  const r = 0.09 * s, cy = y - 0.2 * s;
+  ctx.beginPath();
+  ctx.moveTo(x, cy - r * 1.4); ctx.lineTo(x + r, cy); ctx.lineTo(x, cy + r * 1.4); ctx.lineTo(x - r, cy); ctx.closePath();
+  ctx.fillStyle = volume(ctx, x, cy, r * 1.4, '#e8fff4', '#5ae0a0', '#1a6a4a');
+  ctx.fill();
+  ink(ctx, s, 0.03);
+  ctx.stroke();
+}
+
+export function wisp(ctx, x, y, s, color = '#ffb060') {
+  const cy = y - 0.6 * s;
+  glow(ctx, x, cy, 0.35 * s, '255,180,90', 0.35);
+  ctx.beginPath();
+  ctx.moveTo(x, cy - 0.2 * s);
+  ctx.quadraticCurveTo(x + 0.13 * s, cy, x, cy + 0.12 * s);
+  ctx.quadraticCurveTo(x - 0.13 * s, cy, x, cy - 0.2 * s);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ink(ctx, s, 0.03);
+  ctx.stroke();
+  ctx.fillStyle = '#fff6d0';
+  ctx.beginPath(); ctx.arc(x, cy + 0.02 * s, 0.04 * s, 0, Math.PI * 2); ctx.fill();
+}
+
+export function cloud(ctx, x, y, s, seed = 1) {
+  ctx.fillStyle = 'rgba(110,150,50,0.9)';
+  for (let k = 0; k < 7; k++) {
+    const r = rng(seed + k);
+    blobPath(ctx, x + (r() - 0.5) * 0.9 * s, y - 0.25 * s + (r() - 0.5) * 0.4 * s, (0.25 + r() * 0.2) * s, (0.18 + r() * 0.1) * s, 0.3, seed + k, 8);
+    ctx.fill();
+  }
+}
