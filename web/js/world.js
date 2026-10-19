@@ -799,13 +799,13 @@ export class World {
       if (it.kind === 'coin') {
         it.taken = true;
         p.coins += Math.round(it.value * s.coinMult);
-        this.events.push({ type: 'coin' });
+        this.events.push({ type: 'coin', x: it.x, z: it.z, value: Math.round(it.value * s.coinMult) });
       } else if (it.kind === 'heart') {
         if (p.hp >= s.maxHp) continue;
         if (it.price) { if (p.coins < it.price) continue; p.coins -= it.price; }
         it.taken = true;
         this.healPlayer(2);
-        this.events.push({ type: 'heal' });
+        this.events.push({ type: 'heal', x: it.x, z: it.z });
       } else if (it.kind === 'item') {
         if (it.price) { if (p.coins < it.price) continue; p.coins -= it.price; }
         it.taken = true;

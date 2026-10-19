@@ -8,7 +8,8 @@ import { Cfg } from './config.js';
 import * as S from './sprites.js';
 import { drawRoom } from './roomart.js';
 import { pixelSprite, quantize, light, grime, outline } from './pixel.js';
-import { textSprite, textWidth } from './font.js';
+import { textSprite } from './font.js';
+import { Effects } from './effects.js';
 import { ITEMS, activeTransforms, TRANSFORMS } from './items.js';
 import { tileIndex } from './dungeon.js';
 import { ENEMIES } from './enemies.js';
@@ -57,12 +58,26 @@ export class Renderer {
     this.g = this.low.getContext('2d');
     this.sprites = new Map();
     this.rooms = new Map();
-    this.parts = [];
-    this.rings = [];
-    this.zaps = [];
+    this.fx = new Effects();
     this.time = 0;
+    this.dt = 0;
     this.world = null;
     this.lanternGlow = this.makeGlow(70);
+    this.smallGlow = this.makeGlow(16);
+    this.candles = new Map();     // room key -> flame positions in room pixels
+    this.lights = [];             // short flashes of light (explosions)
+    this.trail = [];              // dash afterimages
+    this.motes = [];
+    this.recoil = 0;
+    this.dustT = 0;
+    this.doorOpen = null;
+    this.holdItem = null;
+    this.bossIntro = null;
+    this.whiteFlash = 0;
+    this.deathT = 0;
+    this.hudShake = 0;
+    this.lastCoins = 0;
+    this.coinBump = 0;
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -80,6 +95,8 @@ export class Renderer {
     this.canvas.style.height = `${window.innerHeight}px`;
     this.low.width = this.VW;
     this.low.height = this.VH;
+    this.g.imageSmoothingEnabled = false;
+    this.redEdge = this.makeEdge(this.VW, this.VH);
     this.bx = Math.floor((this.VW - ROOM_PW) / 2);
     this.by = HUD_H + Math.max(0, Math.floor((this.VH - HUD_H - ROOM_PH) * 0.3));
     // where the HUD ends on screen, in CSS pixels (for HTML buttons)
@@ -87,11 +104,20 @@ export class Renderer {
   }
 
   setWorld(world) {
+    const fresh = this.world !== world;
     this.world = world;
     this.rooms.clear();
-    this.parts = [];
-    this.rings = [];
+    this.candles.clear();
+    this.fx.clear();
+    this.lights = [];
+    this.trail = [];
     this.builtDungeon = world.dungeon;
+    if (fresh) {
+      this.deathT = 0;
+      this.bossIntro = null;
+      this.holdItem = null;
+      this.lastCoins = world.player.coins;
+    }
   }
 
   // ======================================================================
@@ -142,6 +168,19 @@ export class Renderer {
       this.sprites.set(key, s);
     }
     return s;
+  }
+
+  /** Red edges for low health, the size of the screen. */
+  makeEdge(w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.62);
+    gr.addColorStop(0, 'rgba(150,0,0,0)');
+    gr.addColorStop(1, 'rgba(150,0,0,0.75)');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, w, h);
+    return c;
   }
 
   makeGlow(r) {
@@ -209,7 +248,8 @@ export class Renderer {
         if (room.tiles[tileIndex(i, j)] === 1) props.push(['rock', i, j, Math.floor(rnd() * 6)]);
       }
     }
-    const candles = [];
+    const candles = [], flames = [];
+    this.candles.set(room.key, flames);
     const nProps = 3 + Math.floor(rnd() * 4);
     for (let k = 0; k < nProps; k++) {
       const edge = rnd() < 0.5;
@@ -218,7 +258,12 @@ export class Renderer {
       if (!free(i, j) || nearDoor(i, j) || room.type !== 'normal' && room.type !== 'start' && rnd() < 0.5) continue;
       const kind = ['skull', 'bone', 'candle', 'candle', 'urn', 'bone'][Math.floor(rnd() * 6)];
       props.push([kind, i, j, k]);
-      if (kind === 'candle') candles.push(at(i, j));
+      if (kind === 'candle') {
+        candles.push(at(i, j));
+        // where this candle's flame sits, so it can flicker live
+        const h = (0.22 + S.rng(k % 3 + 1)() * 0.15) * PX;
+        flames.push([at(i, j)[0], at(i, j)[1] - h - 2]);
+      }
     }
     props.sort((a, b) => b[2] - a[2]);
     for (const [kind, i, j, v] of props) {
@@ -258,13 +303,16 @@ export class Renderer {
   render(dt) {
     const w = this.world;
     this.time += dt;
+    this.dt = dt;
     const g = this.g;
     g.fillStyle = '#0a0604';
     g.fillRect(0, 0, this.VW, this.VH);
     if (w) {
       if (w.dungeon !== this.builtDungeon) this.setWorld(w);
       this.drawWorld(w, dt);
-      this.drawHud(w);
+      this.drawOverlays(w, dt);
+      this.drawHud(w, dt);
+      if (this.bossIntro) this.drawBossIntro(w, dt);
       this.prebake(w);
     }
     const ctx = this.ctx;
@@ -300,18 +348,26 @@ export class Renderer {
     const P = (x, z) => [ox + WALL_SIDE + (x + W / 2) * PX, oy + WALL_TOP + (D / 2 - z) * PX];
 
     this.consumeEvents(w, P);
+    this.drawCandles(room, ox, oy);
 
-    // closed doors while the room has enemies
-    if (!room.cleared) {
+    // closed doors while the room has enemies; they sink away when it is cleared
+    const opening = this.doorOpen && this.doorOpen.key === room.key ? this.doorOpen : null;
+    if (opening) { opening.t += dt; if (opening.t > 0.4) this.doorOpen = null; }
+    if (!room.cleared || opening) {
+      const k = opening ? Math.min(1, opening.t / 0.4) : 0;
       for (const d of ['n', 's', 'e', 'w']) {
         if (!room.doors[d]) continue;
         const o = w.dungeon.rooms.get(w.neighbourKey(room, d));
         const style = room.type === 'boss' || o.type === 'boss' ? 'boss' : o.type === 'treasure' ? 'treasure' : 'normal';
         const spr = this.sprite(`door:${d}:${style}`, (cc, x, y, ss) => S.closedDoor(cc, x, y - (d === 'n' ? 0 : 0.6 * ss), ss, d, style), PX, d === 'n' ? 1.8 : 1.6, d === 'n' ? 2.2 : 1.8);
         const [dx, dy] = d === 'n' ? P(0, D / 2) : d === 's' ? P(0, -D / 2) : d === 'e' ? P(W / 2, 0) : P(-W / 2, 0);
-        this.blit(spr, dx, dy + (d === 'n' ? 0 : 0.6 * PX));
+        if (k > 0) g.globalAlpha = 1 - k;
+        this.blit(spr, dx, dy + (d === 'n' ? 0 : 0.6 * PX) - Math.round(k * 6));
+        g.globalAlpha = 1;
       }
     }
+    this.fx.drawUnder(g, dt);
+    this.drawMotes(dt, ox, oy);
 
     // everything that stands on the floor, sorted by depth
     const list = [];
@@ -333,6 +389,7 @@ export class Renderer {
     const p = w.player;
     {
       const [x, y] = P(p.x, p.z);
+      this.drawTrail(dt);
       list.push([y, () => this.drawHero(w, x, y, t)]);
     }
     const fx = w.shotEffects();
@@ -345,24 +402,122 @@ export class Renderer {
       const [x, y] = P(s.x, s.z);
       const col = shotColor(s.fx);
       const size = Math.round(s.r * 40) / 40;
+      // a faint trail behind each tear, embers behind burning ones
+      if (Math.random() < (s.big ? 1 : 0.5)) this.fx.add(x + (Math.random() - 0.5) * 2, y - 10 + (Math.random() - 0.5) * 2, 0, 0, col, { life: s.big ? 0.25 : 0.14, fade: true, size: s.big ? 2 : 1 });
+      if (s.fx && s.fx.fire && Math.random() < 0.3) this.fx.add(x, y - 10, (Math.random() - 0.5) * 10, 0, '#ffb040', { z: 0, vz: 25, life: 0.3, fade: true });
+      if (s.big || (s.fx && s.fx.fire)) this.lights.push({ x, y: y - 10, r: s.big ? 18 : 12, t: 0, life: 0.001, k: 0.6 });
       list.push([y, () => this.blit(this.sprite(`tear${col}${size}`, (cc, px, py, ss) => S.tear(cc, px, py - 0.5 * ss, ss, { color: col, size }), PX, 1, 1.3), x, y)]);
     }
     for (const b of w.eshots) {
       const [x, y] = P(b.x, b.z);
+      if (Math.random() < 0.3) this.fx.add(x, y - 10, 0, 0, '#7a1014', { life: 0.12, fade: true });
       list.push([y, () => this.blit(this.sprite('etear', (cc, px, py, ss) => S.tear(cc, px, py - 0.5 * ss, ss, { enemy: true }), PX, 1, 1.3), x, y)]);
     }
     list.sort((a, b) => a[0] - b[0]);
     for (const [, draw] of list) draw();
 
-    this.updateParticles(dt);
-    this.drawRings(dt);
-    this.drawZaps(dt, P);
+    this.fx.draw(g, dt);
+    this.drawHeldItem(w, P, dt);
 
-    // the lantern's warm light follows the hero
+    // the lantern's warm light follows the hero; explosions flash
     const [hx, hy] = P(p.x, p.z);
     g.globalCompositeOperation = 'soft-light';
     g.drawImage(this.lanternGlow, Math.round(hx + 6 - this.lanternGlow.width / 2), Math.round(hy - 12 - this.lanternGlow.height / 2));
+    this.lights = this.lights.filter((l) => {
+      l.t += dt;
+      const k = Math.min(1, l.t / Math.max(l.life, 0.001));
+      g.globalAlpha = (l.k || 1) * (1 - k * 0.8);
+      g.drawImage(this.lanternGlow, Math.round(l.x - l.r), Math.round(l.y - l.r * 0.8), l.r * 2, Math.round(l.r * 1.6));
+      return l.t < l.life;
+    });
+    g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
+  }
+
+  /** Live flicker on top of the baked candles. */
+  drawCandles(room, ox, oy) {
+    const g = this.g, t = this.time;
+    for (const [i, [x, y]] of (this.candles.get(room.key) || []).entries()) {
+      const n = Math.sin(t * 13 + i * 7) + Math.sin(t * 23 + i * 3) * 0.5;
+      const fx = Math.round(ox + x), fy = Math.round(oy + y);
+      g.globalCompositeOperation = 'soft-light';
+      g.globalAlpha = 0.55 + n * 0.15;
+      g.drawImage(this.smallGlow, fx - 16, fy - 13);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      const h = n > 0.6 ? 3 : n > -0.6 ? 2 : 1;
+      g.fillStyle = '#ff9a2a'; g.fillRect(fx, fy - h, 1, h + 1);
+      g.fillStyle = '#fff4c0'; g.fillRect(fx, fy, 1, 1);
+      if (n > 1.1) { g.fillStyle = '#ff9a2a'; g.fillRect(fx + (i % 2 ? 1 : -1), fy - 1, 1, 1); }
+    }
+  }
+
+  /** Dust specks drifting through the lamplight. */
+  drawMotes(dt, ox, oy) {
+    const g = this.g;
+    const x0 = WALL_SIDE, x1 = WALL_SIDE + W * PX, y0 = WALL_TOP, y1 = WALL_TOP + D * PX;
+    while (this.motes.length < 16) {
+      this.motes.push({ x: x0 + Math.random() * (x1 - x0), y: y0 + Math.random() * (y1 - y0), vx: (Math.random() - 0.5) * 3, vy: -1 - Math.random() * 3, ph: Math.random() * TAU });
+    }
+    g.fillStyle = '#f0e0b8';
+    for (const m of this.motes) {
+      m.x += (m.vx + Math.sin(this.time * 0.7 + m.ph) * 2) * dt;
+      m.y += m.vy * dt;
+      if (m.y < y0) m.y = y1;
+      if (m.x < x0) m.x = x1; else if (m.x > x1) m.x = x0;
+      g.globalAlpha = 0.18 + 0.18 * Math.sin(this.time * 1.3 + m.ph);
+      g.fillRect(Math.round(ox + m.x), Math.round(oy + m.y), 1, 1);
+    }
+    g.globalAlpha = 1;
+  }
+
+  /** Dash afterimages, fading out. */
+  drawTrail(dt) {
+    const g = this.g;
+    this.trail = this.trail.filter((a) => {
+      a.t += dt;
+      if (a.t > 0.22) return false;
+      g.globalAlpha = 0.45 * (1 - a.t / 0.22);
+      this.blit(a.spr, a.x, a.y);
+      g.globalAlpha = 1;
+      return true;
+    });
+  }
+
+  /** The item you just picked up, held over your head in a beam of light. */
+  drawHeldItem(w, P, dt) {
+    const h = this.holdItem;
+    if (!h) return;
+    h.t += dt;
+    if (h.t > 1.5) { this.holdItem = null; return; }
+    const g = this.g;
+    const [x, y] = P(w.player.x, w.player.z);
+    const k = Math.min(1, h.t / 0.2) * (h.t > 1.2 ? 1 - (h.t - 1.2) / 0.3 : 1);
+    const iy = y - 44 - Math.round(Math.sin(h.t * 4) * 1);
+    // rays turning slowly
+    g.fillStyle = '#fff0c0';
+    for (let r = 0; r < 8; r++) {
+      const a = h.t * 0.8 + (r / 8) * TAU;
+      for (let d = 9; d < 18; d += 2) {
+        g.globalAlpha = k * 0.5 * (1 - (d - 9) / 9);
+        g.fillRect(Math.round(x + Math.cos(a) * d), Math.round(iy + Math.sin(a) * d), 1, 1);
+      }
+    }
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'soft-light';
+    g.globalAlpha = k;
+    g.drawImage(this.lanternGlow, Math.round(x - 24), Math.round(iy - 20), 48, 40);
+    g.globalCompositeOperation = 'source-over';
+    this.blit(this.icon(ITEMS[h.id].icon, 13), x, iy);
+    g.globalAlpha = 1;
+    if (Math.random() < 0.3) this.fx.add(x + (Math.random() - 0.5) * 16, iy + 4, 0, 0, '#fff0b0', { z: 0, vz: 12, life: 0.5, fade: true });
+  }
+
+  blitScaled(spr, x, y, sx, sy) {
+    if (sx === 1 && sy === 1) { this.blit(spr, x, y); return; }
+    const c = spr.canvas;
+    const w = Math.max(1, Math.round(c.width * sx)), h = Math.max(1, Math.round(c.height * sy));
+    this.g.drawImage(c, Math.round(x - spr.ax * sx), Math.round(y - spr.ay * sy), w, h);
   }
 
   drawHero(w, x, y, t) {
@@ -377,12 +532,22 @@ export class Renderer {
     const [k, ft] = frame(moving ? 'heroWalk' : 'heroIdle', t);
     const key = `hero:${facing}:${moving ? 'w' : 'i'}${k}`;
     const spr = this.sprite(key, (cc, px, py, ss) => S.hero(cc, px, py, ss, ft, { facing, moving }), PX * 1.45, 1.9, 2.0);
-    if (p.dashT > 0) {
-      this.g.globalAlpha = 0.35;
-      this.blit(spr, x - p.dashX * 6, y + p.dashZ * 6);
-      this.g.globalAlpha = 1;
+    const dashing = p.dashT > 0;
+    if (dashing) {
+      this.trail.push({ spr: this.tinted(key, spr, '#7ab8ff', 0.6), x, y, t: 0 });
+    } else if (moving) {
+      // little puffs of dust from the feet
+      this.dustT -= this.dt;
+      if (this.dustT <= 0) { this.dustT = 0.18; this.fx.smoke(x, y - 1, '#7a6a58', 1, 6, 0.4, 5); }
     }
-    this.blit(spr, x, y);
+    // squash and stretch: bob while walking, stretch while dashing, kick back when shooting
+    let sx = 1, sy = 1;
+    if (dashing) { if (Math.abs(p.dashX) > Math.abs(p.dashZ)) { sx = 1.12; sy = 0.92; } else { sx = 0.9; sy = 1.1; } }
+    else if (moving) sy = 1 + Math.sin(t * 24) * 0.03;
+    else sy = 1 + Math.sin(t * 2.2) * 0.015;
+    let rx = 0, ry = 0;
+    if (this.recoil > 0) { this.recoil -= this.dt; rx = -Math.round(p.aimX); ry = Math.round(p.aimZ); }
+    this.blitScaled(spr, x + rx, y + ry, sx, sy);
     if (p.shield > 0) {
       // bone armour: a ring of pale dots circling the hero
       const g = this.g;
@@ -394,13 +559,10 @@ export class Renderer {
     }
   }
 
-  drawEnemy(w, e, x, y, t) {
-    if (e.spawnT > 0) {
-      if (Math.random() < 0.25) this.burst(x, y, '#140a06', 1, 0.6, 2);
-      if (Math.floor(t * 16) % 2 === 0) return;
-    }
+  /** Picks the sprite for an enemy's current look. */
+  enemySprite(w, e, t) {
     const tt = t + e.phase;
-    let spr, key;
+    let spr, key, lift = 0, shadowR = 0;
     const big = 1.3;
     if (e.type === 'fly') {
       const [k, ft] = frame('fly', tt);
@@ -426,16 +588,13 @@ export class Renderer {
       const [k, ft] = frame('slime', tt);
       key = `slime${e.small ? 's' : ''}${k}`;
       spr = this.sprite(key, (cc, px, py, ss) => S.slime(cc, px, py, ss, ft, { small: !!e.small }), PX * big, 1.3, 1.3);
-      if (e.hop > 0) y -= Math.round(Math.sin((e.hop / 0.45) * Math.PI) * 6);
+      if (e.hop > 0) lift = Math.round(Math.sin((e.hop / 0.45) * Math.PI) * 6);
     } else if (e.type === 'bloat') {
       const [k, ft] = frame('bloat', tt);
       const swell = e.swell ? 1.12 : 1;
       key = `bloat${k}:${swell}`;
       spr = this.sprite(key, (cc, px, py, ss) => S.bloat(cc, px, py, ss, ft), PX * 0.85 * swell, 3.4, 3.2);
-      if (e.lift) {
-        S.shadow(this.g, x, y, PX, 1.0, 0.4);
-        y -= Math.round(e.lift * PX * 0.6);
-      }
+      if (e.lift) { lift = Math.round(e.lift * PX * 0.6); shadowR = 1.0; }
     } else if (e.type === 'spider') {
       const run = e.run > 0;
       const [k, ft] = frame(run ? 'spiderRun' : 'spider', tt);
@@ -459,10 +618,7 @@ export class Renderer {
       const air = !!e.air;
       key = `leaper${air ? 'a' : 's'}`;
       spr = this.sprite(key, (cc, px, py, ss) => S.leaper(cc, px, py, ss, 0, { air }), PX * 1.3, 1.1, 1.3);
-      if (e.lift) {
-        S.shadow(this.g, x, y, PX, 0.35, 0.35);
-        y -= Math.round(e.lift * PX * 0.6);
-      }
+      if (e.lift) { lift = Math.round(e.lift * PX * 0.6); shadowR = 0.35; }
     } else if (e.type === 'boomfly') {
       const [k, ft] = frame('boomfly', tt);
       key = `boomfly${k}`;
@@ -476,10 +632,7 @@ export class Renderer {
       const mouth = e.mouth ? 1 : 0;
       key = `gorger${k}:${mouth}`;
       spr = this.sprite(key, (cc, px, py, ss) => S.gorger(cc, px, py, ss, ft, { mouth }), PX * 1.05, 2.5, 2.5);
-      if (e.lift) {
-        S.shadow(this.g, x, y, PX, 1.0, 0.4);
-        y -= Math.round(e.lift * PX * 0.6);
-      }
+      if (e.lift) { lift = Math.round(e.lift * PX * 0.6); shadowR = 1.0; }
     } else if (e.type === 'hive') {
       const [k, ft] = frame('hive', tt);
       const pulse = e.pulse ? 1 : 0;
@@ -499,26 +652,53 @@ export class Renderer {
       key = `deep${k}:${a}:${stare}`;
       spr = this.sprite(key, (cc, px, py, ss) => S.deepEye(cc, px, py, ss, ft, { look, stare }), PX * 1.2, 2.8, 3.4);
     }
-    if (!spr) return;
+    return spr ? { spr, key, lift, shadowR } : null;
+  }
+
+  drawEnemy(w, e, x, y, t) {
+    const r = this.enemySprite(w, e, t);
+    if (!r) return;
+    let { spr } = r;
+    const key = r.key, g = this.g;
+    if (r.shadowR) S.shadow(g, x, y, PX, r.shadowR, 0.4);
+    y -= r.lift;
     if (e.flash > 0.3) spr = this.tinted(key, spr, '#ffffff', 0.75);
     else if (e.stun > 0) spr = this.tinted(key, spr, '#ffe060', 0.35);
     else if (e.frozen > 0) spr = this.tinted(key, spr, '#8adcff', 0.5);
     else if (e.burn > 0) spr = this.tinted(key, spr, Math.floor(t * 8) % 2 ? '#ff7a2a' : '#ffb040', 0.35);
     else if (e.poison > 0) spr = this.tinted(key, spr, '#7ad040', 0.3);
-    if (e.alpha !== undefined && e.alpha < 0.99) {
-      // ghosts flicker in and out
-      if (e.alpha < 0.05) return;
-      this.g.globalAlpha = e.alpha;
-      this.blit(spr, x, y);
-      this.g.globalAlpha = 1;
-    } else this.blit(spr, x, y);
-    if (e.burn > 0 && Math.random() < 0.3) this.burst(x, y - 14, '#ff9a2a', 1, 0.4, 3, -30);
+    let sx = 1, sy = 1, alpha = e.alpha !== undefined ? e.alpha : 1;
+    if (e.spawnT > 0) {
+      // rises out of a puff of dark smoke
+      const k = 1 - Math.min(1, e.spawnT / 0.45);
+      if (Math.random() < 0.5) this.fx.smoke(x, y, '#1e120c', 1, e.boss ? 30 : 12, 0.6, 12);
+      if (k <= 0) return;
+      sx = 0.5 + 0.5 * k; sy = k; alpha *= k;
+    } else if (e.flash > 0) {
+      // squash when hit
+      sx = 1 + 0.14 * e.flash; sy = 1 - 0.12 * e.flash;
+    }
+    if (alpha < 0.05) return;
+    g.globalAlpha = alpha;
+    this.blitScaled(spr, x, y, sx, sy);
+    g.globalAlpha = 1;
+    if (e.burn > 0 && Math.random() < 0.3) this.fx.add(x + (Math.random() - 0.5) * 10, y - 14, 0, 0, '#ff9a2a', { z: 0, vz: 30, life: 0.4, fade: true });
+    if (e.poison > 0 && Math.random() < 0.15) this.fx.add(x + (Math.random() - 0.5) * 10, y - 10, 0, 0, '#9ad050', { z: 0, vz: 12, life: 0.5, fade: true, size: 2 });
+    if (e.stun > 0 && Math.random() < 0.3) this.fx.add(x + (Math.random() - 0.5) * 10, y - 22, 0, 0, '#ffe060', { life: 0.2 });
   }
 
   drawPickup(it, x, y, t) {
     if (it.kind === 'coin') {
       const [k, ft] = frame('coin', t + it.x);
       this.blit(this.sprite(`coin${k}`, (cc, px, py, ss) => S.coin(cc, px, py, ss, ft), PX, 0.8, 0.9), x, y);
+      // an occasional glint
+      const gl = (t * 0.7 + it.x * 0.37 + it.z * 0.11) % 2;
+      if (gl < 0.12) {
+        const g = this.g;
+        g.fillStyle = '#fffbe0';
+        g.fillRect(Math.round(x + 1), Math.round(y - 9), 1, 1);
+        if (gl > 0.03 && gl < 0.09) { g.fillRect(Math.round(x), Math.round(y - 9), 3, 1); g.fillRect(Math.round(x + 1), Math.round(y - 10), 1, 3); }
+      }
     } else if (it.kind === 'heart') {
       this.blit(this.sprite('heartPick', (cc, px, py, ss) => S.heart(cc, px, py, ss), PX * 1.1, 1, 1), x, y - Math.round(Math.abs(Math.sin(t * 3)) * 2));
     } else if (it.kind === 'item') {
@@ -529,8 +709,10 @@ export class Renderer {
       this.g.drawImage(this.lanternGlow, Math.round(x - 20), Math.round(gy - 16), 40, 32);
       this.g.globalCompositeOperation = 'source-over';
       this.blit(ic, x, gy);
+      if (Math.random() < 0.06) this.fx.add(x + (Math.random() - 0.5) * 16, gy + 6, 0, 0, '#fff0b0', { z: 0, vz: 10, life: 0.7, fade: true });
     } else if (it.kind === 'trapdoor') {
       this.blit(this.sprite('trapdoor', (cc, px, py, ss) => S.trapdoor(cc, px, py, ss), PX, 1.8, 1.6), x, y);
+      if (Math.random() < 0.15) this.fx.add(x + (Math.random() - 0.5) * 18, y - 4, 0, 0, '#0a0604', { z: 0, vz: 10, life: 0.8, fade: true, size: 2, grow: 1 });
     }
     if (it.price) {
       const txt = textSprite(`${it.price}¢`, '#f6c84a');
@@ -542,137 +724,198 @@ export class Renderer {
   // Effects
   // ======================================================================
   consumeEvents(w, P) {
+    const fx = this.fx;
     for (const e of w.events) {
       if (e.type === 'kill') {
         const [x, y] = P(e.x, e.z);
         const c = BLOOD[e.enemy] || [150, 16, 20];
         const hex = `rgb(${c[0]},${c[1]},${c[2]})`;
-        this.burst(x, y - 8, hex, e.boss ? 50 : 12, e.boss ? 2.5 : 1.2, 6);
+        const dark = `rgb(${c[0] >> 1},${c[1] >> 1},${c[2] >> 1})`;
+        const bony = ['ram', 'host', 'bonelord'].includes(e.enemy);
+        fx.burst(x, y - 8, hex, e.boss ? 50 : 10, e.boss ? 2.5 : 1.2, 6);
+        fx.gibs(x, y - 6, bony ? ['#ece0c4', '#a89878', hex] : [hex, dark, '#e0b0a0'], e.boss ? 24 : e.small ? 3 : 6, e.boss ? 1.6 : 1);
+        fx.ring(x, y - 8, e.boss ? 30 : 9, '#fff4e0', 0.15);
         this.stampSplat(w, w.roomKey, x - this.ox, y - this.oy, c, e.boss ? 2.4 : e.small ? 0.6 : 1);
+        if (e.boss) {
+          // a chain of bursts across the body
+          for (let k = 0; k < 6; k++) {
+            setTimeout(() => {
+              const bx = x + (Math.random() - 0.5) * 40, by = y - 10 - Math.random() * 30;
+              fx.fireball(bx, by, 10 + Math.random() * 6, '#b01818');
+              fx.gibs(bx, by, [hex, dark], 5);
+              this.lights.push({ x: bx, y: by, r: 40, t: 0, life: 0.3 });
+            }, k * 140);
+          }
+          this.whiteFlash = 0.35;
+        }
       } else if (e.type === 'hit') {
         const [x, y] = P(e.x, e.z);
-        this.burst(x, y - 10, shotColor(e.fx), 4, 0.8, 3);
+        fx.splash(x, y - 10, shotColor(e.fx));
+        fx.burst(x, y - 10, shotColor(e.fx), 3, 0.7, 3);
       } else if (e.type === 'splat') {
         const [x, y] = P(e.x, e.z);
-        this.burst(x, y - 10, shotColor(e.fx), 5, 0.6, 2);
+        fx.splash(x, y - 10, shotColor(e.fx));
       } else if (e.type === 'esplat') {
         const [x, y] = P(e.x, e.z);
-        this.burst(x, y - 10, '#9a1418', 4, 0.6, 2);
+        fx.splash(x, y - 10, '#b01818');
       } else if (e.type === 'explode') {
         const [x, y] = P(e.x, e.z);
         const col = shotColor(e.fx);
-        this.rings.push({ x, y, r: e.r * PX, t: 0, life: 0.3, color: col === '#9ad0ff' ? '#ffb040' : col, fill: true });
-        this.burst(x, y - 4, col === '#9ad0ff' ? '#ff9a2a' : col, 14, 1.6, 4);
+        const tint = col === '#9ad0ff' ? null : col;
+        fx.fireball(x, y, e.r * PX * 0.85, tint);
+        this.lights.push({ x, y: y - 6, r: e.r * PX * 2.2, t: 0, life: 0.3 });
       } else if (e.type === 'slam') {
         const [x, y] = P(e.x, e.z);
-        this.rings.push({ x, y, r: e.r * PX, t: 0, life: 0.45, color: '#8a6a4a' });
-        this.burst(x, y, '#4a3a2a', 30, 2, 2);
+        fx.ring(x, y, e.r * PX, '#8a6a4a', 0.45);
+        fx.smoke(x, y, '#5a4a3a', Math.round(6 + e.r * 4), e.r * PX * 1.2, 0.8, 10);
+        fx.burst(x, y, '#4a3a2a', Math.round(10 + e.r * 8), 1.6, 2);
       } else if (e.type === 'zap') {
-        this.zaps.push({ pts: e.pts.map(([x, z]) => P(x, z)), t: 0 });
+        fx.zap(e.pts.map(([x, z]) => P(x, z)));
       } else if (e.type === 'clink') {
         const [x, y] = P(e.x, e.z);
-        this.burst(x, y - 10, '#ece0c4', 4, 0.7, 3);
+        fx.burst(x, y - 10, '#fff8e0', 4, 0.7, 3);
       } else if (e.type === 'block') {
         const [x, y] = P(w.player.x, w.player.z);
-        this.rings.push({ x, y: y - 10, r: 16, t: 0, life: 0.3, color: '#ece0c4' });
-        this.burst(x, y - 12, '#ece0c4', 10, 1.2, 4);
+        fx.ring(x, y - 10, 16, '#ece0c4', 0.3);
+        fx.gibs(x, y - 10, ['#ece0c4', '#a89878'], 6);
+        fx.text(textSprite('BLOKK', '#ece0c4'), x, y - 30);
       } else if (e.type === 'hurt') {
         const [x, y] = P(w.player.x, w.player.z);
-        this.burst(x, y - 12, '#b01818', 12, 1.2, 4);
-      }
-    }
-  }
-
-  burst(x, y, color, n, power, z = 4, gravity = 220) {
-    for (let k = 0; k < n && this.parts.length < 500; k++) {
-      const a = Math.random() * TAU, sp = (10 + Math.random() * 40) * power;
-      this.parts.push({
-        x, y, z, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * 0.6, vz: 30 + Math.random() * 60 * power,
-        t: 0, life: 0.3 + Math.random() * 0.4, color, size: Math.random() < 0.3 ? 2 : 1, g: gravity,
-      });
-    }
-  }
-
-  updateParticles(dt) {
-    const g = this.g;
-    this.parts = this.parts.filter((p) => {
-      p.t += dt;
-      if (p.t >= p.life) return false;
-      p.vz -= p.g * dt;
-      p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.z < 0) { p.z = 0; p.vz *= -0.3; p.vx *= 0.5; p.vy *= 0.5; }
-      g.fillStyle = p.color;
-      g.fillRect(Math.round(p.x), Math.round(p.y - p.z), p.size, p.size);
-      return true;
-    });
-  }
-
-  drawRings(dt) {
-    const g = this.g;
-    this.rings = this.rings.filter((r) => {
-      r.t += dt;
-      if (r.t >= r.life) return false;
-      const k = r.t / r.life;
-      const rad = r.r * (0.3 + 0.7 * Math.sqrt(k));
-      if (r.fill && k < 0.4) {
-        g.fillStyle = '#fff0b0';
-        g.globalAlpha = 0.6 * (1 - k / 0.4);
-        g.beginPath(); g.ellipse(Math.round(r.x), Math.round(r.y), rad * 0.7, rad * 0.55, 0, 0, TAU); g.fill();
-        g.globalAlpha = 1;
-      }
-      // pixel circle
-      g.fillStyle = r.color;
-      const n = Math.max(12, Math.round(rad * 3));
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU;
-        g.fillRect(Math.round(r.x + Math.cos(a) * rad), Math.round(r.y + Math.sin(a) * rad * 0.75), 1, 1);
-      }
-      return true;
-    });
-  }
-
-  /** Lightning: jagged pixel lines between the points, flickering briefly. */
-  drawZaps(dt) {
-    const g = this.g;
-    this.zaps = this.zaps.filter((z) => {
-      z.t += dt;
-      if (z.t > 0.15) return false;
-      g.fillStyle = Math.floor(z.t * 40) % 2 ? '#fff6b0' : '#a8e0ff';
-      for (let i = 0; i + 1 < z.pts.length; i++) {
-        const [x0, y0] = z.pts[i], [x1, y1] = z.pts[i + 1];
-        const ya = y0 - 10, yb = y1 - 10;
-        const n = Math.max(2, Math.ceil(Math.hypot(x1 - x0, yb - ya) / 6));
-        let px = x0, py = ya;
-        for (let k = 1; k <= n; k++) {
-          const nx = x0 + ((x1 - x0) * k) / n + (k < n ? (Math.random() - 0.5) * 6 : 0);
-          const ny = ya + ((yb - ya) * k) / n + (k < n ? (Math.random() - 0.5) * 6 : 0);
-          const steps = Math.ceil(Math.hypot(nx - px, ny - py));
-          for (let s = 0; s <= steps; s++) g.fillRect(Math.round(px + ((nx - px) * s) / steps), Math.round(py + ((ny - py) * s) / steps), 1, 1);
-          px = nx; py = ny;
+        fx.burst(x, y - 12, '#b01818', 14, 1.3, 4);
+        this.hudShake = 0.4;
+      } else if (e.type === 'shoot') {
+        const p = w.player;
+        const [x, y] = P(p.x + p.aimX * 0.35, p.z + p.aimZ * 0.35);
+        this.recoil = 0.06;
+        fx.add(x, y - 12, p.aimX * 20, -p.aimZ * 20, '#e8f4ff', { life: 0.07, size: 2 });
+      } else if (e.type === 'dash') {
+        const [x, y] = P(w.player.x, w.player.z);
+        fx.smoke(x, y, '#8a7a68', 5, 8, 0.45, 6);
+      } else if (e.type === 'coin') {
+        const [x, y] = e.x !== undefined ? P(e.x, e.z) : P(w.player.x, w.player.z);
+        fx.burst(x, y - 6, '#f6c84a', 5, 0.7, 4);
+        fx.text(textSprite(`+${e.value || 1}¢`, '#f6c84a'), x, y - 18);
+      } else if (e.type === 'heal') {
+        const [x, y] = e.x !== undefined ? P(e.x, e.z) : P(w.player.x, w.player.z);
+        fx.burst(x, y - 8, '#ff6a6a', 6, 0.7, 4);
+        fx.text(textSprite('+♥', '#ff7a7a'), x, y - 22);
+      } else if (e.type === 'item') {
+        this.holdItem = { id: e.id, t: 0 };
+        const [x, y] = P(w.player.x, w.player.z);
+        fx.ring(x, y - 30, 22, '#fff0c0', 0.4);
+      } else if (e.type === 'clear') {
+        this.doorOpen = { key: w.roomKey, t: 0 };
+        for (const d of ['n', 's', 'e', 'w']) {
+          if (!w.room.doors[d]) continue;
+          const [dx, dy] = d === 'n' ? P(0, D / 2) : d === 's' ? P(0, -D / 2) : d === 'e' ? P(W / 2, 0) : P(-W / 2, 0);
+          fx.smoke(dx, dy + (d === 'n' ? -4 : 6), '#6a5a48', 6, 16, 0.7, 10);
         }
+      } else if (e.type === 'boss') {
+        this.bossIntro = { type: w.bossType, t: 0 };
+      } else if (e.type === 'descend') {
+        this.whiteFlash = 0.2;
       }
-      return true;
-    });
+    }
+  }
+
+  /** Screen-wide overlays: low health pulse, white flashes, the fade on death. */
+  drawOverlays(w, dt) {
+    const g = this.g, p = w.player;
+    if (p.hp <= 2 && p.hp > 0 && w.state !== 'dead') {
+      const beat = Math.pow(Math.max(0, Math.sin(this.time * 5)), 6);
+      g.globalAlpha = 0.25 + beat * 0.45;
+      g.drawImage(this.redEdge, 0, 0);
+      g.globalAlpha = 1;
+    }
+    if (this.whiteFlash > 0) {
+      g.globalAlpha = Math.min(1, this.whiteFlash * 2.5);
+      g.fillStyle = '#fff6e8';
+      g.fillRect(0, 0, this.VW, this.VH);
+      g.globalAlpha = 1;
+      this.whiteFlash -= dt;
+    }
+    if (w.state === 'dead') {
+      this.deathT += dt;
+      g.globalAlpha = Math.min(0.7, this.deathT * 0.6);
+      g.fillStyle = '#1a0204';
+      g.fillRect(0, 0, this.VW, this.VH);
+      g.globalAlpha = 1;
+    }
+  }
+
+  /** Boss introduction, Isaac style: the hero and the boss slide in on a band. */
+  drawBossIntro(w, dt) {
+    const bi = this.bossIntro;
+    bi.t += dt;
+    const T = 2.3;
+    if (bi.t > T) { this.bossIntro = null; return; }
+    const g = this.g, VW = this.VW;
+    const k = Math.min(1, bi.t / 0.2, (T - bi.t) / 0.25);
+    g.globalAlpha = 0.6 * k;
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, VW, this.VH);
+    g.globalAlpha = 1;
+    const cy = this.by + Math.round(ROOM_PH * 0.42), bandH = Math.round(104 * k);
+    g.fillStyle = '#160806';
+    g.fillRect(0, cy - bandH / 2, VW, bandH);
+    // rough torn edges
+    g.fillStyle = '#5a1414';
+    for (let x = 0; x < VW; x += 3) {
+      const j = (x * 7) % 5 === 0 ? 1 : 0;
+      g.fillRect(x, Math.round(cy - bandH / 2) - j, 3, 1 + j);
+      g.fillRect(x, Math.round(cy + bandH / 2) - 1, 3, 1 + ((x * 11) % 7 === 0 ? 1 : 0));
+    }
+    if (k < 0.95) return;
+    const u = Math.min(1, (bi.t - 0.2) / 0.35);
+    const slide = 1 - Math.pow(1 - u, 3);
+    const floor = cy + 40;
+    // hero from the left
+    const hero = this.sprite('intro:hero', (cc, px, py, ss) => S.hero(cc, px, py, ss, 0, { facing: 'right' }), PX * 2.2, 1.9, 2.0);
+    this.blit(hero, Math.round(-30 + slide * (VW * 0.22 + 30)), floor);
+    // boss from the right, scaled down if it would not fit the band
+    const r = this.enemySprite(w, { type: bi.type, phase: 0, x: 0, z: 0 }, this.time);
+    if (r) {
+      const sc = Math.min(1.5, 100 / r.spr.canvas.height);
+      const bx = Math.round(VW + 60 - slide * (VW * 0.3 + 60));
+      this.blitScaled(r.spr, bx, floor, sc, sc);
+    }
+    // name, scaled 2x, with a jolt when it lands
+    if (bi.t > 0.5) {
+      const name = textSprite(ENEMIES[bi.type].name, '#e8c0a8');
+      const vs = textSprite('MOT', '#8a6a5a');
+      const jolt = bi.t < 0.6 ? Math.round((Math.random() - 0.5) * 4) : 0;
+      g.drawImage(name, Math.round(VW / 2 - name.width) + jolt, cy - bandH / 2 + 8, name.width * 2, name.height * 2);
+      g.drawImage(vs, Math.round(VW / 2 - vs.width / 2), cy - 4);
+    }
   }
 
   // ======================================================================
   // HUD
   // ======================================================================
-  drawHud(w) {
+  drawHud(w, dt) {
     const g = this.g;
     const p = w.player, s = w.stats;
-    // hearts
+    // hearts: shake when hurt, the last one beats when you are low
     const hearts = s.maxHp / 2;
+    this.hudShake = Math.max(0, this.hudShake - dt);
+    const last = Math.ceil(p.hp / 2) - 1;
+    const beat = p.hp <= 2 ? Math.pow(Math.max(0, Math.sin(this.time * 5)), 6) : 0;
     for (let i = 0; i < hearts; i++) {
       const v = p.hp - i * 2;
       const kind = v >= 2 ? 'full' : v === 1 ? 'half' : 'empty';
       const spr = this.sprite(`hud:heart:${kind}`, (cc, px, py, ss) => S.heart(cc, px, py, ss, { half: kind === 'half', empty: kind === 'empty' }), 13, 1, 1);
-      this.blit(spr, 9 + (i % 6) * 11, 15 + Math.floor(i / 6) * 10);
+      const jx = this.hudShake > 0 ? Math.round((Math.random() - 0.5) * 3) : 0;
+      const jy = this.hudShake > 0 ? Math.round((Math.random() - 0.5) * 2) : 0;
+      const sc = i === last ? 1 + beat * 0.3 : 1;
+      this.blitScaled(spr, 9 + (i % 6) * 11 + jx, 15 + Math.floor(i / 6) * 10 + jy, sc, sc);
     }
-    // coins and floor name
+    // coins (bump when they change) and floor name
+    if (p.coins !== this.lastCoins) { this.coinBump = 0.25; this.lastCoins = p.coins; }
+    this.coinBump = Math.max(0, this.coinBump - dt);
     const row = hearts > 6 ? 32 : 24;
-    this.blit(this.sprite('hud:coin', (cc, px, py, ss) => S.coin(cc, px, py, ss, 0), 13, 1, 1), 8, row + 7);
-    g.drawImage(textSprite(String(p.coins).padStart(2, '0'), '#f6c84a'), 15, row);
+    const bump = this.coinBump > 0 ? 1 : 0;
+    this.blit(this.sprite('hud:coin', (cc, px, py, ss) => S.coin(cc, px, py, ss, 0), 13, 1, 1), 8, row + 7 - bump);
+    g.drawImage(textSprite(String(p.coins).padStart(2, '0'), bump ? '#fff4b0' : '#f6c84a'), 15, row - bump);
     const names = ['KJELLEREN', 'KATAKOMBENE', 'BENHUSET', 'DYPET'];
     g.drawImage(textSprite(`${names[w.floor]} ${['I', 'II', 'III', 'IV'][w.floor]}`, '#c0b2a2'), 34, row);
     // items and transformations
@@ -698,8 +941,19 @@ export class Renderer {
       const bw2 = ROOM_PW - 30, bx = Math.round(this.VW / 2 - bw2 / 2);
       g.fillStyle = '#0d0705'; g.fillRect(bx - 1, y + 8, bw2 + 2, 6);
       g.fillStyle = '#3a0a0c'; g.fillRect(bx, y + 9, bw2, 4);
-      g.fillStyle = '#b02a2a'; g.fillRect(bx, y + 9, Math.round(bw2 * Math.max(0, boss.hp / boss.maxHp)), 4);
-      g.fillStyle = '#d24a40'; g.fillRect(bx, y + 9, Math.round(bw2 * Math.max(0, boss.hp / boss.maxHp)), 1);
+      // the bar drains in two steps: a pale chunk lingers, then catches up
+      const f = Math.max(0, boss.hp / boss.maxHp);
+      if (this.bossShown === undefined || this.bossShown < f || this.bossId !== boss.id) { this.bossShown = f; this.bossId = boss.id; }
+      this.bossShown += (f - this.bossShown) * Math.min(1, dt * 3);
+      g.fillStyle = '#e8c0a0'; g.fillRect(bx, y + 9, Math.round(bw2 * this.bossShown), 4);
+      g.fillStyle = '#b02a2a'; g.fillRect(bx, y + 9, Math.round(bw2 * f), 4);
+      g.fillStyle = '#d24a40'; g.fillRect(bx, y + 9, Math.round(bw2 * f), 1);
+      if (boss.hp < boss.maxHp * 0.5) {
+        // enraged: the frame pulses
+        g.globalAlpha = 0.5 + 0.5 * Math.sin(this.time * 8);
+        g.fillStyle = '#ff4030'; g.fillRect(bx - 1, y + 8, bw2 + 2, 1); g.fillRect(bx - 1, y + 13, bw2 + 2, 1);
+        g.globalAlpha = 1;
+      }
     }
   }
 

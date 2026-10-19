@@ -22,9 +22,10 @@ oppdatering over den gamle.
 
 ## Slik spiller du
 
-- **Venstre tommel** (hvor som helst på skjermen) styrer. Du **skyter
+- **Én tommel** (hvor som helst på skjermen) styrer. Du **skyter
   automatisk** på nærmeste fiende.
-- **DASH**-knappen gir et kort byks der du ikke kan bli truffet.
+- **DASH**-knappen (nede til venstre) gir et kort byks der du ikke kan bli
+  truffet. I pausemenyen kan du flytte den til høyre side.
 - **Liv** er hjerter, og hvert treff tar et halvt hjerte.
 - Hver etasje er et kart med rom. **Dørene låses** til rommet er tomt for
   fiender. Kartet øverst til høyre viser rommene du har sett.
@@ -95,7 +96,8 @@ web/js/dungeon.js    Generering av etasjer: romkart, steinmønstre, fiender.
 web/js/enemies.js    Fiendetyper og oppførsel, inkludert bossene.
 web/js/items.js      Gjenstander og forvandlinger.
 web/js/world.js      Simuleringen: bevegelse, kollisjon, skudd, statuser, rom.
-web/js/render2d.js   Pikselrendereren: rom, figurer, effekter, HUD og minikart.
+web/js/render2d.js   Pikselrendereren: rom, figurer, HUD, minikart og bossintro.
+web/js/effects.js    Partikler, eksplosjoner, sprut, lyn og flytende tekst.
 web/js/sprites.js    Alle figurer og ting, tegnet i kode (Canvas 2D).
 web/js/roomart.js    Tegner rom: steinvegger, døråpninger, gulvheller, mose.
 web/js/pixel.js      Gjør tegningene om til piksler: palett, dithering, omriss, lys.

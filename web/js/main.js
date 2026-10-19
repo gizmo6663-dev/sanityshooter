@@ -55,7 +55,25 @@ const release = (e) => {
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 
-$('btn-dash').addEventListener('pointerdown', (e) => { e.stopPropagation(); unlockAudio(); input.dash = true; });
+$('btn-dash').addEventListener('pointerdown', (e) => {
+  e.stopPropagation(); unlockAudio(); input.dash = true;
+  $('btn-dash').classList.remove('pressed'); void $('btn-dash').offsetWidth; $('btn-dash').classList.add('pressed');
+});
+
+// Which side the dash button sits on (the other hand steers anywhere).
+const DASH_KEY = 'dypet.dashSide';
+let dashSide = 'left';
+try { dashSide = localStorage.getItem(DASH_KEY) || 'left'; } catch (e) { /* storage unavailable */ }
+function applyDashSide() {
+  $('btn-dash').classList.toggle('right', dashSide === 'right');
+  $('btn-dashside').textContent = `DASH-KNAPP: ${dashSide === 'right' ? 'HØYRE' : 'VENSTRE'}`;
+}
+$('btn-dashside').addEventListener('click', () => {
+  dashSide = dashSide === 'right' ? 'left' : 'right';
+  try { localStorage.setItem(DASH_KEY, dashSide); } catch (e) { /* storage unavailable */ }
+  applyDashSide();
+});
+applyDashSide();
 window.addEventListener('keydown', (e) => {
   input.keys[e.code] = true;
   if (e.code === 'Space' || e.code === 'ShiftLeft') input.dash = true;
@@ -94,6 +112,19 @@ function openTitle() {
   const s = [];
   if (prog.runs) s.push(`Forsøk: ${prog.runs} · Seire: ${prog.wins}`, `Dypeste etasje: ${prog.bestFloor}`, `Fiender drept: ${prog.kills}`);
   $('title-stats').innerHTML = s.join('<br>');
+  // embers drifting up behind the logo
+  const em = $('embers');
+  if (!em.children.length) {
+    for (let k = 0; k < 22; k++) {
+      const i = document.createElement('i');
+      i.style.left = `${Math.random() * 100}%`;
+      i.style.animationDuration = `${5 + Math.random() * 6}s`;
+      i.style.animationDelay = `${-Math.random() * 10}s`;
+      i.style.setProperty('--drift', `${(Math.random() - 0.5) * 120}px`);
+      if (Math.random() < 0.4) { i.style.width = i.style.height = '2px'; }
+      em.appendChild(i);
+    }
+  }
   setMode('title');
 }
 
@@ -103,6 +134,7 @@ function startRun() {
   renderer.setWorld(world);
   lastFloor = -1;
   endTimer = 0;
+  freeze = slow = 0;
   setMode('play');
 }
 
@@ -191,7 +223,12 @@ function updateHud() {
   // renderer; only the dash button's cooldown ring lives in HTML.
   const p = world.player, s = world.stats;
   const cd = p.dashCd / (Cfg.DASH_COOLDOWN * s.dashCooldownMult);
-  $('btn-dash').classList.toggle('cooling', cd > 0);
+  const btn = $('btn-dash');
+  if (btn.classList.contains('cooling') && cd <= 0) {
+    // flash when it is ready again
+    btn.classList.remove('ready'); void btn.offsetWidth; btn.classList.add('ready');
+  }
+  btn.classList.toggle('cooling', cd > 0);
   $('dash-ring').style.background = cd > 0 ? `conic-gradient(rgba(216,207,188,0.5) ${(1 - cd) * 360}deg, transparent 0deg)` : 'none';
   $('dash-ring').style.webkitMask = 'radial-gradient(circle, transparent 60%, #000 62%)';
 }
@@ -205,6 +242,7 @@ placeButtons();
 
 // --- Events from the world -----------------------------------------------------------
 let lastFloor = -1, endTimer = 0;
+let freeze = 0, slow = 0;      // hit-stop and slow motion, in real seconds
 function handleEvents() {
   for (const e of world.events) {
     switch (e.type) {
@@ -212,6 +250,7 @@ function handleEvents() {
       case 'hit': sfx.hit(); break;
       case 'kill': sfx.kill(); break;
       case 'hurt':
+        freeze = 0.07;
         sfx.hurt();
         $('hurt-flash').classList.add('on');
         setTimeout(() => $('hurt-flash').classList.remove('on'), 60);
@@ -237,9 +276,8 @@ function handleEvents() {
       }
       case 'boss':
         sfx.boss();
-        announce(e.name, 'Den har ventet på deg.');
         break;
-      case 'bossdead': announce('Seier', world.floor + 1 < Cfg.FLOORS ? 'En luke åpner seg i gulvet …' : ''); break;
+      case 'bossdead': slow = 1.3; announce('Seier', world.floor + 1 < Cfg.FLOORS ? 'En luke åpner seg i gulvet …' : ''); break;
       case 'floor':
         if (world.floor !== lastFloor) {
           lastFloor = world.floor;
@@ -262,9 +300,17 @@ function frame(now) {
   lastT = now;
   if (mode === 'play' && world) {
     const [mx, mz] = moveVector();
-    world.update(dt / 2, mx, mz, input.dash);
-    world.update(dt / 2, mx, mz, false);
-    input.dash = false;
+    if (renderer.bossIntro) {
+      // the world waits while the boss is introduced
+    } else if (freeze > 0) {
+      freeze -= dt;
+    } else {
+      const k = slow > 0 ? 0.35 : 1;
+      slow = Math.max(0, slow - dt);
+      world.update((dt * k) / 2, mx, mz, input.dash);
+      world.update((dt * k) / 2, mx, mz, false);
+      input.dash = false;
+    }
     handleEvents();
     updateHud();
     if (world.state === 'dead' || world.state === 'won') {
