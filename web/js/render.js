@@ -5,20 +5,28 @@
 import * as THREE from 'three';
 import { Cfg } from './config.js';
 import {
-  RIG, mobGeometries, hordeGeometry, buildCannon, buildPlayerWall, buildCastle,
+  RIG, mobGeometries, hordeGeometry, buildCannon, buildPlayerWall, buildCastle, buildTurret,
   buildEnvironment, waveFlag, stripeTexture, Batch, vcMat, mat, seeded,
 } from './models.js';
 
 const COL = {
-  blue: 0x2f7dff, blueLimb: 0x2259c9,
-  giant: 0xffc02e, giantLimb: 0xd98e17,
-  red: 0xff3434, redLimb: 0xc21f2b,
-  brute: 0xb3122e, bruteLimb: 0x6e0a1a,
+  blue: 0x2f7dff,
+  giant: 0xffc02e,
+  red: 0xff3434,
   gold: 0xffc23d,
 };
 
 const GATE_COLORS = { 2: '#33b4ff', 3: '#a64dff', 4: '#ff4fd8' };
-const gateColor = (g) => (g.kind === 'add' ? '#2fe07a' : GATE_COLORS[g.value] || '#ffbf1f');
+const gateColor = (g) => (g.kind === 'add' ? '#2fe07a' : g.kind === 'div' ? '#ff3030' : GATE_COLORS[g.value] || '#ffbf1f');
+const gateText = (g) => (g.kind === 'add' ? `+${g.value}` : g.kind === 'div' ? `÷${g.value}` : `×${g.value}`);
+
+// Element colours: 1 fire, 2 ice, 3 poison
+const EL_BODY = [0x2f7dff, 0xff7a1a, 0x5fd0ff, 0x4fd14a];
+const EL_FX = [0xffb347, 0xff6a1a, 0x8fe8ff, 0x6fe36a];
+const RED_KIND = { unit: 0xff3434, runner: 0xff7a3a, shield: 0xd62f3a, bomber: 0x9b2335, brute: 0xb3122e, boss: 0x7a0a1e };
+const RED_SCALE = { unit: 1.6, runner: 1.3, shield: 1.75, bomber: 1.7, brute: 3.4, boss: 6.2 };
+const tmpC2 = new THREE.Color();
+const BURN = new THREE.Color(0xffa020), FROST = new THREE.Color(0xa8ecff), VENOM = new THREE.Color(0x8ad04a), WHITE = new THREE.Color(0xffffff);
 const CONFETTI = [0xff3b6b, 0xffc23d, 0x3fd2ff, 0x5ce65c, 0xb36bff, 0xffffff];
 
 const MAX_PARTICLES = 1000;
@@ -28,6 +36,7 @@ const tmpM = new THREE.Matrix4();
 const tmpL = new THREE.Matrix4();
 const tmpO = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
+const MAX_BLUE_DRAW = 900;
 const tmpP = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const tmpE = new THREE.Euler();
@@ -123,6 +132,7 @@ export class Renderer {
     this.buildMobs();
     this.buildHorde();
     this.buildParticles();
+    this.buildFx();
 
     this.gateObjs = [];
     this.tags = [];          // hp tags over giants / brutes
@@ -213,7 +223,7 @@ export class Renderer {
 
   buildMobs() {
     const g = mobGeometries();
-    const n = Cfg.MAX_BLUE + Cfg.MAX_RED + 8;
+    const n = MAX_BLUE_DRAW + Cfg.MAX_RED + 8;
     const tinted = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05 });
     const shiny = vcMat({ roughness: 0.2, metalness: 0.1 });
     const metal = vcMat({ roughness: 0.35, metalness: 0.45 });
@@ -227,6 +237,11 @@ export class Renderer {
       hat: instanced(g.hat, vcMat({ roughness: 0.5, side: THREE.DoubleSide }), Cfg.MAX_BLUE + 8),
       helmet: instanced(g.helmet, metal, Cfg.MAX_RED + 8),
       crown: instanced(g.crown, vcMat({ roughness: 0.25, metalness: 0.7 }), MAX_GIANTS),
+      board: instanced(g.board, vcMat({ roughness: 0.7 }), Cfg.MAX_RED + 8),
+      bomb: instanced(g.bomb, vcMat({ roughness: 0.3, metalness: 0.3 }), Cfg.MAX_RED + 8),
+      bubble: instanced(g.bubble, new THREE.MeshStandardMaterial({
+        color: 0x8fe0ff, emissive: 0x2fa8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.28, depthWrite: false,
+      }), 900),
     };
     for (const im of Object.values(this.mob)) this.scene.add(im);
   }
@@ -250,6 +265,28 @@ export class Renderer {
     im.frustumCulled = false;
     this.horde = im;
     this.scene.add(im);
+  }
+
+  buildFx() {
+    // Expanding rings for explosions and stomps
+    const ringGeo = new THREE.TorusGeometry(1, 0.07, 4, 36);
+    ringGeo.rotateX(Math.PI / 2);
+    const add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
+    this.ringMesh = instanced(ringGeo, new THREE.MeshBasicMaterial(add), 160, { color: true });
+    this.rings = [];
+    // Catapult target markers and the rocks themselves
+    const markGeo = new THREE.RingGeometry(0.8, 1, 32);
+    markGeo.rotateX(-Math.PI / 2);
+    this.markMesh = instanced(markGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a, ...add, side: THREE.DoubleSide }), 8);
+    this.rockMesh = instanced(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.9, flatShading: true }), 8, { shadow: true });
+    // Poison clouds
+    this.cloudMesh = instanced(new THREE.SphereGeometry(1, 14, 8), new THREE.MeshStandardMaterial({
+      color: 0x7bea5a, emissive: 0x3fbf2a, emissiveIntensity: 0.5, transparent: true, opacity: 0.35, depthWrite: false,
+    }), Cfg.MAX_CLOUDS);
+    // Turret shots
+    this.shotMesh = instanced(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial(), 80, { color: true });
+    for (const im of [this.ringMesh, this.markMesh, this.rockMesh, this.cloudMesh, this.shotMesh]) this.scene.add(im);
+    this.turrets = [];
   }
 
   buildParticles() {
@@ -279,8 +316,20 @@ export class Renderer {
     for (const f of this.floaters) this.scene.remove(f.sprite);
     this.floaters = [];
     this.parts = [];
+    this.rings = [];
     this.lastBaseText = null;
     this.celebrated = false;
+    // Wall turrets from items
+    for (const t of this.turrets) this.scene.remove(t.root);
+    this.turrets = [];
+    const n = world.mods.turrets;
+    for (let i = 0; i < n; i++) {
+      const t = buildTurret();
+      const x = n === 1 ? 0 : -Cfg.LANE_HALF + 0.6 + (i / (n - 1)) * (Cfg.LANE_HALF * 2 - 1.2);
+      t.root.position.set(x, 1.1, 1.1);
+      this.scene.add(t.root);
+      this.turrets.push(t);
+    }
   }
 
   makeGate(g) {
@@ -323,7 +372,7 @@ export class Renderer {
     }
 
     const label = makeLabel(256, 128);
-    drawLabel(label, g.kind === 'add' ? `+${g.value}` : `×${g.value}`, { stroke: '#2a0c4a' });
+    drawLabel(label, gateText(g), { stroke: g.kind === 'div' ? '#4a0000' : '#2a0c4a' });
     const lm = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w * 0.98, 3.8), Math.min(w * 0.49, 1.9)),
       new THREE.MeshBasicMaterial({ map: label.tex, transparent: true, depthWrite: false }));
     lm.position.set(0, h / 2 + 0.35, 0.06);
@@ -348,6 +397,7 @@ export class Renderer {
       this.updateTags(w);
       this.updateBase(w);
       this.updateCannon(w);
+      this.updateFx(w, dt);
     }
     this.updateScenery(dt);
     this.updateParticles(dt);
@@ -374,8 +424,11 @@ export class Renderer {
   consumeEvents(w) {
     for (const e of w.events) {
       if (e.type === 'pop') {
-        const color = e.team === 0 ? COL.blue : e.team === 1 ? COL.red : COL.gold;
-        this.burst(e.x, e.z, color, e.big ? 18 : 5, e.big ? 1.6 : 1);
+        let color = e.team === 0 ? COL.blue : e.team === 1 ? COL.red : e.team === 4 ? 0x8a6a4a : COL.gold;
+        if (e.el) color = EL_FX[e.el];
+        this.burst(e.x, e.z, color, e.big ? 18 : e.team === 3 ? 3 : 5, e.big ? 1.6 : 1);
+      } else if (e.type === 'ring') {
+        if (this.rings.length < 160) this.rings.push({ x: e.x, z: e.z, r: e.r, t: 0, life: e.stomp ? 0.45 : 0.35, color: e.color });
       } else if (e.type === 'text') {
         this.addFloater(e.x, e.z, e.text, e.color);
       }
@@ -400,7 +453,7 @@ export class Renderer {
   updateMobs(w) {
     const M = this.mob;
     const t = this.time;
-    let n = 0, nl = 0, nh = 0, nr = 0, nc = 0;
+    let n = 0, nl = 0, nh = 0, nr = 0, nc = 0, nb = 0, nbo = 0, nbu = 0;
 
     const part = (im, idx, lx, ly, rx, rz) => {
       tmpL.makeRotationFromEuler(tmpE.set(rx, 0, rz));
@@ -409,7 +462,7 @@ export class Renderer {
       im.setMatrixAt(idx, tmpO);
     };
 
-    const write = (m, bodyCol, limbCol, scale) => {
+    const write = (m, bodyCol, scale) => {
       const speed = m.giant ? 7 : 13;
       const ph = t * speed + m.phase;
       const swing = Math.sin(ph) * 0.85;
@@ -422,10 +475,10 @@ export class Renderer {
       tmpM.compose(tmpP, tmpQ, tmpS);
 
       M.body.setMatrixAt(n, tmpM);
-      M.body.setColorAt(n, tmpC.set(bodyCol));
+      M.body.setColorAt(n, bodyCol);
       M.eyes.setMatrixAt(n, tmpM);
       M.pupils.setMatrixAt(n, tmpM);
-      tmpC.set(limbCol);
+      tmpC.copy(bodyCol).multiplyScalar(0.72);
       for (const sx of [-1, 1]) {
         part(M.legs, nl, sx * RIG.hipX, RIG.hipY, swing * sx, 0);
         M.legs.setColorAt(nl, tmpC);
@@ -434,24 +487,40 @@ export class Renderer {
         nl++;
       }
       if (m.team === 0) {
-        if (m.giant && nc < MAX_GIANTS) M.crown.setMatrixAt(nc++, tmpM);
-        else if (!m.giant) M.hat.setMatrixAt(nh++, tmpM);
+        if (m.kind === 'giant' && nc < MAX_GIANTS) M.crown.setMatrixAt(nc++, tmpM);
+        else if (m.kind !== 'giant') M.hat.setMatrixAt(nh++, tmpM);
+        if (m.shield && nbu < 900) M.bubble.setMatrixAt(nbu++, tmpM);
       } else {
         M.helmet.setMatrixAt(nr, tmpM);
         M.brows.setMatrixAt(nr, tmpM);
         nr++;
+        if (m.kind === 'shield' && m.armor > 0) M.board.setMatrixAt(nb++, tmpM);
+        if (m.kind === 'bomber') M.bomb.setMatrixAt(nbo++, tmpM);
+        if (m.kind === 'boss' && nc < MAX_GIANTS) M.crown.setMatrixAt(nc++, tmpM);
       }
       n++;
     };
 
     for (const m of w.blue) {
-      const s = m.giant ? 3.6 : 1.6 + Math.min(0.7, (m.hp - 1) * 0.04);
-      if (m.giant) write(m, COL.giant, COL.giantLimb, s);
-      else write(m, COL.blue, COL.blueLimb, s);
+      if (n >= MAX_BLUE_DRAW) break;
+      const s = m.kind === 'giant' ? 3.6 : (m.small ? 1.2 : 1.6) + Math.min(0.7, (m.hp - 1) * 0.04);
+      if (m.kind === 'giant') tmpC2.set(m.el ? EL_BODY[m.el] : COL.giant);
+      else if (m.gold) tmpC2.set(COL.giant);
+      else tmpC2.set(EL_BODY[m.el]);
+      if (m.ghost) tmpC2.lerp(WHITE, 0.45);
+      write(m, tmpC2, s);
     }
     for (const m of w.red) {
-      if (m.giant) write(m, COL.brute, COL.bruteLimb, 3.4);
-      else write(m, COL.red, COL.redLimb, 1.6);
+      tmpC2.set(RED_KIND[m.kind] || COL.red);
+      if (m.burn > 0) {
+        tmpC2.lerp(BURN, 0.45 + 0.25 * Math.sin(t * 20 + m.phase));
+        if (Math.random() < 0.06 && this.parts.length < MAX_PARTICLES) {
+          this.parts.push({ x: m.x + (Math.random() - 0.5) * 0.4, y: 1.0, z: -m.z, vx: 0, vy: 2.5, vz: 0, life: 0.4, t: 0, color: 0xff8a1a, s: 0.7, g: -1 });
+        }
+      }
+      if (m.slow > 0) tmpC2.lerp(FROST, 0.6);
+      if (m.poisoned > 0) tmpC2.lerp(VENOM, 0.35);
+      write(m, tmpC2, RED_SCALE[m.kind] || 1.6);
     }
 
     M.body.count = M.eyes.count = M.pupils.count = n;
@@ -459,6 +528,9 @@ export class Renderer {
     M.hat.count = nh;
     M.helmet.count = M.brows.count = nr;
     M.crown.count = nc;
+    M.board.count = nb;
+    M.bomb.count = nbo;
+    M.bubble.count = nbu;
     for (const im of Object.values(M)) {
       im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
@@ -482,10 +554,10 @@ export class Renderer {
       const m = big[k];
       tag.sprite.visible = !!m;
       if (!m) continue;
-      drawLabel(tag.label, String(m.hp), {
+      drawLabel(tag.label, String(Math.ceil(m.hp + m.armor)), {
         color: m.team === 0 ? '#ffe680' : '#ffffff', stroke: m.team === 0 ? '#5a3500' : '#4a0010',
       });
-      tag.sprite.position.set(m.x, 4.0, -m.z);
+      tag.sprite.position.set(m.x, m.kind === 'boss' ? 7 : 4.0, -m.z);
     }
   }
 
@@ -512,8 +584,73 @@ export class Renderer {
     for (const m of this.wallMats) m.emissiveIntensity = w.castleFlash * 0.8;
   }
 
+  updateFx(w, dt) {
+    const t = this.time;
+    // rings
+    let i = 0;
+    this.rings = this.rings.filter((r) => (r.t += dt) < r.life);
+    for (const r of this.rings) {
+      const k = r.t / r.life;
+      const sc = r.r * (0.25 + 0.75 * Math.sqrt(k));
+      tmpM.compose(tmpP.set(r.x, 0.4 + k * 0.3, -r.z), tmpQ.identity(), tmpS.set(sc, 1 + (1 - k) * 2, sc));
+      this.ringMesh.setMatrixAt(i, tmpM);
+      this.ringMesh.setColorAt(i, tmpC.set(r.color).multiplyScalar(1 - k));
+      i++;
+    }
+    this.ringMesh.count = i;
+    // catapult rocks + markers
+    i = 0;
+    for (const r of w.rocks) {
+      const k = Math.min(1, r.t / r.dur);
+      const pulse = 1 + Math.sin(t * 18) * 0.06;
+      tmpM.compose(tmpP.set(r.tx, 0.27, -r.tz), tmpQ.identity(), tmpS.setScalar(Cfg.ROCK_RADIUS * pulse * (0.6 + 0.4 * k)));
+      this.markMesh.setMatrixAt(i, tmpM);
+      const sx = 0, sy = 7, sz = -Cfg.LANE_LEN + 1;
+      tmpP.set(sx + (r.tx - sx) * k, sy + (0.4 - sy) * k + Math.sin(k * Math.PI) * 9, sz + (-r.tz - sz) * k);
+      tmpQ.setFromEuler(tmpE.set(t * 5, t * 3, 0));
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(1));
+      this.rockMesh.setMatrixAt(i, tmpM);
+      i++;
+    }
+    this.markMesh.count = this.rockMesh.count = i;
+    // poison clouds
+    i = 0;
+    for (const c of w.clouds) {
+      const k = c.t / c.life;
+      const fade = Math.min(1, (1 - k) * 4) * Math.min(1, c.t * 6);
+      const wob = 1 + Math.sin(t * 3 + c.x) * 0.06;
+      tmpM.compose(tmpP.set(c.x, 0.5, -c.z), tmpQ.identity(), tmpS.set(c.r * wob * fade, c.r * 0.4 * fade + 0.01, c.r * wob * fade));
+      this.cloudMesh.setMatrixAt(i++, tmpM);
+    }
+    this.cloudMesh.count = i;
+    // turret shots
+    i = 0;
+    for (const s of w.shots) {
+      if (i >= 80) break;
+      tmpM.compose(tmpP.set(s.x, 1.6, -s.z), tmpQ.identity(), tmpS.setScalar(1));
+      this.shotMesh.setMatrixAt(i, tmpM);
+      this.shotMesh.setColorAt(i, tmpC.set(s.el ? EL_FX[s.el] : 0xfff2a0));
+      i++;
+    }
+    this.shotMesh.count = i;
+    for (const im of [this.ringMesh, this.markMesh, this.rockMesh, this.cloudMesh, this.shotMesh]) {
+      im.instanceMatrix.needsUpdate = true;
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    }
+    // turrets aim at the closest enemy
+    for (const tr of this.turrets) {
+      let best = null, bd = 1e9;
+      for (const r of w.red) {
+        const d = (r.x - tr.root.position.x) ** 2 + r.z * r.z;
+        if (d < bd) { bd = d; best = r; }
+      }
+      if (best) tr.head.rotation.y = Math.atan2(-(best.x - tr.root.position.x), best.z + 1);
+    }
+  }
+
   updateCannon(w) {
     this.cannon.position.x = w.cannonX;
+    this.cannon.rotation.z = w.stun > 0 ? Math.sin(this.time * 40) * 0.08 : 0;
     this.barrel.position.z = w.recoil * 0.25;
     this.cannon.scale.setScalar(0.85 * (1 + w.recoil * 0.04));
     const f = Math.max(0, w.recoil - 0.55) / 0.45;

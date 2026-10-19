@@ -268,7 +268,27 @@ export function mobGeometries() {
   }
   const crown = mergeGeos(crownParts);
 
-  return { body, leg, arm, eyes, pupils, brows, hat, helmet, crown };
+  // Wooden shield carried by enemy shield-bearers
+  const board = mergeGeos([
+    { geo: new THREE.CylinderGeometry(0.3, 0.3, 0.05, 14), color: 0x9a6532, matrix: mat(0, 0.4, 0.33, PI / 2) },
+    { geo: new THREE.TorusGeometry(0.3, 0.03, 4, 16), color: 0x5a5f6a, matrix: mat(0, 0.4, 0.35) },
+    { geo: new THREE.SphereGeometry(0.07, 8, 5), color: 0xc9ced8, matrix: mat(0, 0.4, 0.37, 0, 0, 0, 1, 1, 0.6) },
+    { geo: new THREE.BoxGeometry(0.06, 0.56, 0.02), color: 0x6d4421, matrix: mat(0, 0.4, 0.36) },
+  ]);
+
+  // Bomb carried on the head of enemy bombers
+  const bomb = mergeGeos([
+    { geo: new THREE.SphereGeometry(0.2, 10, 8), color: 0x22222a, matrix: mat(0, 0.92, 0) },
+    { geo: new THREE.CylinderGeometry(0.06, 0.06, 0.06, 8), color: 0x777a85, matrix: mat(0, 1.12, 0) },
+    { geo: new THREE.CylinderGeometry(0.015, 0.015, 0.14, 4), color: 0xd8c08a, matrix: mat(0.03, 1.2, 0, 0, 0, -0.4) },
+    { geo: new THREE.SphereGeometry(0.045, 6, 4), color: 0xffd23a, matrix: mat(0.07, 1.27, 0) },
+  ]);
+
+  // Bubble around shielded player mobs
+  const bubble = new THREE.SphereGeometry(0.42, 14, 10);
+  bubble.translate(0, 0.42, 0);
+
+  return { body, leg, arm, eyes, pupils, brows, hat, helmet, crown, board, bomb, bubble };
 }
 
 /** Cheap one-piece red mob for the idle horde behind the base. */
@@ -503,6 +523,24 @@ export function waveFlag(mesh, t, amp = 0.12) {
 }
 
 // --- Environment ------------------------------------------------------------------
+/** A small wall turret: base, rotating head with barrel. */
+export function buildTurret() {
+  const root = new THREE.Group();
+  const base = new Batch();
+  base.add(new THREE.CylinderGeometry(0.4, 0.48, 0.35, 12), 0x5f8ee0, mat(0, 0.17, 0));
+  base.add(new THREE.TorusGeometry(0.42, 0.05, 4, 16), 0xffc23d, mat(0, 0.35, 0, PI / 2));
+  root.add(base.build(vcMat({ roughness: 0.5 })));
+  const head = new THREE.Group();
+  head.position.y = 0.5;
+  const h = new Batch();
+  h.add(new THREE.SphereGeometry(0.3, 12, 8, 0, PI * 2, 0, PI / 2), 0x2f7dff, mat(0, 0, 0));
+  h.add(new THREE.CylinderGeometry(0.08, 0.1, 0.6, 8), 0x26304a, mat(0, 0.08, -0.35, PI / 2));
+  h.add(new THREE.TorusGeometry(0.1, 0.03, 4, 10), 0xffc23d, mat(0, 0.08, -0.66));
+  head.add(h.build(vcMat({ roughness: 0.35, metalness: 0.3 })));
+  root.add(head);
+  return { root, head };
+}
+
 export function buildEnvironment(scene) {
   const L = Cfg.LANE_LEN, H = Cfg.LANE_HALF;
   const rnd = seeded(12345);

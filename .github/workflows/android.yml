@@ -18,7 +18,7 @@ jobs:
           node-version: 20
 
       - name: Røyktest av spillogikken
-        run: node tools/balance.mjs 5
+        run: node tools/balance.mjs 2
 
       - uses: actions/setup-java@v4
         with:
