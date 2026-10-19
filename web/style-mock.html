@@ -1,0 +1,168 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;background:#0d0806;overflow:hidden}canvas{display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+import * as S from './js/sprites.js';
+const params = new URLSearchParams(location.search);
+const style = params.get('style') || 'light';
+const c = document.getElementById('c');
+const W = 412, H = 870, dpr = 2;
+c.width = W * dpr; c.height = H * dpr; c.style.width = W + 'px'; c.style.height = H + 'px';
+const g = c.getContext('2d');
+g.scale(dpr, dpr);
+let seed = 7;
+const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+function stones(x0, y0, w, h, base, n) {
+  g.save(); g.beginPath(); g.rect(x0, y0, w, h); g.clip();
+  g.fillStyle = base; g.fillRect(x0, y0, w, h);
+  for (let k = 0; k < n; k++) {
+    const x = x0 + rnd() * w, y = y0 + rnd() * h, rx = 9 + rnd() * 12, ry = 6 + rnd() * 8;
+    const v = 0.85 + rnd() * 0.35;
+    g.fillStyle = `rgba(${120 * v},${90 * v},${66 * v},1)`;
+    g.beginPath(); g.ellipse(x, y, rx, ry, rnd(), 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#1c100b'; g.lineWidth = 2; g.stroke();
+    g.fillStyle = 'rgba(255,230,200,0.12)';
+    g.beginPath(); g.ellipse(x - rx * 0.25, y - ry * 0.3, rx * 0.45, ry * 0.35, 0, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+
+function room() {
+  const s = 40, rw = 9 * s, rd = 13 * s;
+  const rx = (W - rw) / 2, ry = 170;
+  g.fillStyle = '#100906'; g.fillRect(0, 0, W, H);
+  // walls in perspective: the top wall shows its face, the sides and bottom less
+  const top = 70, side = 22, bot = 34;
+  const poly = (pts, fill) => { g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath(); g.save(); g.clip(); fill(); g.restore(); g.strokeStyle = '#1c100b'; g.lineWidth = 3; g.stroke(); };
+  poly([[rx - side, ry - top], [rx + rw + side, ry - top], [rx + rw, ry], [rx, ry]], () => { stones(rx - side, ry - top, rw + side * 2, top, '#3a281c', 90); const gr = g.createLinearGradient(0, ry - top, 0, ry); gr.addColorStop(0, 'rgba(0,0,0,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(rx - side, ry - top, rw + side * 2, top); });
+  poly([[rx - side, ry - top], [rx, ry], [rx, ry + rd], [rx - side, ry + rd + bot]], () => { stones(rx - side, ry - top, side, rd + top + bot, '#2e2016', 60); g.fillStyle = 'rgba(0,0,0,0.35)'; g.fillRect(rx - side, ry - top, side, rd + top + bot); });
+  poly([[rx + rw + side, ry - top], [rx + rw + side, ry + rd + bot], [rx + rw, ry + rd], [rx + rw, ry]], () => { stones(rx + rw, ry - top, side, rd + top + bot, '#2e2016', 60); g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(rx + rw, ry - top, side, rd + top + bot); });
+  poly([[rx, ry + rd], [rx + rw, ry + rd], [rx + rw + side, ry + rd + bot], [rx - side, ry + rd + bot]], () => { stones(rx - side, ry + rd, rw + side * 2, bot, '#2a1c13', 50); g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(rx - side, ry + rd, rw + side * 2, bot); });
+  // floor: big uneven flagstones
+  g.save(); g.beginPath(); g.rect(rx, ry, rw, rd); g.clip();
+  g.fillStyle = '#3a2618'; g.fillRect(rx, ry, rw, rd);
+  const fs = s * 1.5;
+  for (let j = 0; j < rd / fs + 1; j++) for (let i = 0; i < rw / fs + 1; i++) {
+    const v = 0.85 + rnd() * 0.3;
+    const x = rx + i * fs + (j % 2 ? fs / 2 : 0) - fs / 2 + 3, y = ry + j * fs + 3;
+    g.fillStyle = `rgb(${128 * v},${98 * v},${74 * v})`;
+    g.beginPath(); g.roundRect(x, y, fs - 6, fs - 6, 6); g.fill();
+    g.strokeStyle = 'rgba(28,16,11,0.6)'; g.lineWidth = 2; g.stroke();
+    g.fillStyle = 'rgba(255,235,210,0.06)'; g.fillRect(x + 4, y + 3, fs - 14, 5);
+  }
+  for (let k = 0; k < 2500; k++) { g.fillStyle = `rgba(0,0,0,${rnd() * 0.12})`; g.fillRect(rx + rnd() * rw, ry + rnd() * rd, 2, 2); }
+  // shadow falling off towards the walls
+  const edge = (x0, y0, x1, y1, x, y, w, h) => { const gr = g.createLinearGradient(x0, y0, x1, y1); gr.addColorStop(0, 'rgba(0,0,0,0.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x, y, w, h); };
+  edge(0, ry, 0, ry + 60, rx, ry, rw, 60);
+  edge(0, ry + rd, 0, ry + rd - 40, rx, ry + rd - 40, rw, 40);
+  edge(rx, 0, rx + 40, 0, rx, ry, 40, rd);
+  edge(rx + rw, 0, rx + rw - 40, 0, rx + rw - 40, ry, 40, rd);
+  g.restore();
+  // doors
+  const door = (x, y, w, h) => {
+    g.fillStyle = '#4a3624'; g.strokeStyle = '#1c100b'; g.lineWidth = 3;
+    g.beginPath(); g.roundRect(x - 8, y - 8, w + 16, h + 12, [14, 14, 2, 2]); g.fill(); g.stroke();
+    g.fillStyle = '#0a0503'; g.beginPath(); g.roundRect(x, y, w, h, [10, 10, 0, 0]); g.fill();
+  };
+  door(W / 2 - 26, ry - 58, 52, 58);
+  g.fillStyle = '#0a0503'; g.fillRect(W / 2 - 24, ry + rd, 48, bot);
+  return { s, rx, ry, rw, rd };
+}
+
+function scene(t) {
+  const R = room();
+  const { s, rx, ry } = R;
+  const at = (i, j) => [rx + (i + 0.5) * s, ry + (j + 0.5) * s];
+  // blood and props
+  for (const [i, j, sd] of [[2, 4, 1], [6, 8, 2], [3, 10, 3], [7, 2, 4]]) { const [x, y] = at(i, j); S.bloodSplat(g, x, y, s, sd); }
+  const list = [];
+  for (const [i, j] of [[1, 3], [2, 3], [7, 3], [1, 9], [7, 9], [6, 9]]) list.push(['rock', ...at(i, j), i * 7 + j]);
+  list.push(['grub', ...at(2, 6)]);
+  list.push(['fly', ...at(5, 3)]);
+  list.push(['fly', ...at(6, 4)]);
+  list.push(['fly', ...at(4.5, 4.5)]);
+  list.push(['eye', ...at(7, 6)]);
+  list.push(['slime', ...at(3, 8)]);
+  list.push(['ram', ...at(5.5, 6.5)]);
+  list.push(['coin', ...at(1, 11)]);
+  list.push(['heart', ...at(7.3, 11)]);
+  list.push(['hero', ...at(4, 10.4)]);
+  list.sort((a, b) => a[2] - b[2]);
+  for (const [k, x, y, sd] of list) {
+    if (k === 'rock') S.rock(g, x, y + s * 0.4, s, sd);
+    if (k === 'grub') S.grub(g, x, y, s, t);
+    if (k === 'fly') S.fly(g, x, y, s, t + x);
+    if (k === 'eye') S.eyeball(g, x, y, s, t, { look: [-0.6, 0.8] });
+    if (k === 'slime') S.slime(g, x, y, s, t);
+    if (k === 'ram') S.ram(g, x, y, s, t);
+    if (k === 'coin') S.coin(g, x, y, s, t);
+    if (k === 'heart') S.heart(g, x, y, s);
+    if (k === 'hero') S.hero(g, x, y, s * 1.15, t, { facing: 'down', moving: true });
+  }
+  // tears in flight
+  const [hx, hy] = at(4, 10.4);
+  for (const [dx, dy] of [[0.1, -2.0], [0.5, -3.6], [1.0, -5.1]]) S.tear(g, hx + dx * s, hy - 0.9 * s + dy * s, s);
+  for (const [i, j] of [[6.3, 7.2], [5.6, 8.4]]) { const [x, y] = at(i, j); S.tear(g, x, y - 0.6 * s, s, { enemy: true }); }
+  if (style === 'moody') {
+    // darkness with holes of light around the lantern and candles
+    const dark = document.createElement('canvas');
+    dark.width = W; dark.height = H;
+    const d = dark.getContext('2d');
+    d.fillStyle = 'rgba(8,4,2,0.82)';
+    d.fillRect(0, 0, W, H);
+    d.globalCompositeOperation = 'destination-out';
+    for (const [x, y, r] of [[hx + 0.35 * s, hy - 0.4 * s, 190], [rx + 14, ry + 3 * s, 70], [rx + R.rw - 14, ry + 9 * s, 70]]) {
+      const gr = d.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      d.fillStyle = gr; d.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    g.drawImage(dark, 0, 0);
+    g.globalCompositeOperation = 'overlay';
+    const warm = g.createRadialGradient(hx, hy - 20, 0, hx, hy - 20, 200);
+    warm.addColorStop(0, 'rgba(255,170,80,0.35)'); warm.addColorStop(1, 'rgba(255,170,80,0)');
+    g.fillStyle = warm; g.fillRect(0, 0, W, H);
+    g.globalCompositeOperation = 'source-over';
+  } else {
+    const v = g.createRadialGradient(W / 2, H / 2, H * 0.3, W / 2, H / 2, H * 0.62);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.6)');
+    g.fillStyle = v; g.fillRect(0, 0, W, H);
+  }
+  // HUD
+  for (let k = 0; k < 3; k++) S.heart(g, 26 + k * 30, 46, 40, { half: k === 2 });
+  g.font = 'bold 16px Georgia'; g.fillStyle = '#e8c070'; g.fillText('¢ 7', 14, 74);
+  g.fillStyle = '#d8cfbc'; g.font = 'italic 14px Georgia'; g.fillText('Kjelleren I', 54, 74);
+}
+
+function sheet(t) {
+  g.fillStyle = '#2a1e16'; g.fillRect(0, 0, W, H);
+  g.fillStyle = 'rgba(255,240,220,0.04)';
+  for (let k = 0; k < 4000; k++) g.fillRect(rnd() * W, rnd() * H, 2, 2);
+  g.fillStyle = '#e8dcc4'; g.font = 'bold 22px Georgia'; g.textAlign = 'center';
+  g.fillText('Figurer i tegnet stil', W / 2, 36);
+  const label = (txt, x, y) => { g.font = 'italic 13px Georgia'; g.fillStyle = '#c8b898'; g.fillText(txt, x, y); };
+  const s = 70;
+  S.hero(g, 70, 170, s, t, { facing: 'down' }); label('ned', 70, 192);
+  S.hero(g, 165, 170, s, t, { facing: 'left', moving: true }); label('venstre', 165, 192);
+  S.hero(g, 260, 170, s, t + 0.1, { facing: 'right', moving: true }); label('høyre', 260, 192);
+  S.hero(g, 350, 170, s, t, { facing: 'up' }); label('opp', 350, 192);
+  S.fly(g, 70, 330, s * 1.2, t); label('Flue', 70, 352);
+  S.grub(g, 170, 330, s, t); label('Larve', 170, 352);
+  S.eyeball(g, 270, 330, s, t); label('Glaner', 270, 352);
+  S.ram(g, 360, 330, s, t); label('Beinvær', 360, 352);
+  S.slime(g, 80, 480, s, t); label('Slim', 80, 502);
+  S.bloat(g, 250, 520, s * 0.85, t); label('Den oppsvulmede (boss)', 250, 545);
+  S.rock(g, 70, 640, s, 3); label('Stein', 70, 662);
+  S.heart(g, 160, 640, s); label('Hjerte', 160, 662);
+  S.coin(g, 240, 640, s, 0.2); label('Mynt', 240, 662);
+  S.pedestal(g, 330, 640, s); label('Sokkel', 330, 662);
+  S.tear(g, 90, 760, s); label('Skudd', 90, 800);
+  S.tear(g, 180, 760, s, { color: '#ff8a3a' }); label('Ildskudd', 180, 800);
+  S.tear(g, 270, 760, s, { color: '#8af0ff' }); label('Isskudd', 270, 800);
+  S.tear(g, 350, 760, s, { enemy: true }); label('Fiendeskudd', 350, 800);
+}
+
+if (style === 'sheet') sheet(0.3); else scene(0.3);
+window.done = true;
+</script></body></html>
