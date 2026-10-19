@@ -32,7 +32,7 @@ export class World {
     this.player = {
       x: 0, z: 0, r: Cfg.PLAYER_R, hp: Cfg.PLAYER_HP, coins: 0,
       xp: 0, level: 1, xpNext: Cfg.XP_FIRST,
-      fireCd: 0, dashT: 0, dashCd: 0, dashX: 0, dashZ: 1, iframes: 0,
+      vx: 0, vz: 0, fireCd: 0, dashT: 0, dashCd: 0, dashX: 0, dashZ: 1, iframes: 0,
       faceX: 0, faceZ: 1, aimX: 0, aimZ: 1, moving: false, leechCount: 0, dashHit: new Set(),
     };
     this.enemies = [];
@@ -204,8 +204,12 @@ export class World {
         }
       }
     } else {
+      // Ease into and out of motion instead of snapping to full speed.
       const sp = s.speed * s.speedMult;
-      vx = mx * sp; vz = mz * sp;
+      const k = Math.min(1, dt * (p.moving ? 16 : 20));
+      p.vx += (mx * sp - p.vx) * k;
+      p.vz += (mz * sp - p.vz) * k;
+      vx = p.vx; vz = p.vz;
     }
     this.moveCircle(p, vx * dt, vz * dt, true);
     if (this.checkDoors()) return;

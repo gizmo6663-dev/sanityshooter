@@ -109,7 +109,7 @@ export const edgeShadowTexture = (() => {
     ];
     for (const [x, y, sw, sh, x0, y0, x1, y1] of sides) {
       const grad = g.createLinearGradient(x0, y0, x1, y1);
-      grad.addColorStop(0, 'rgba(0,0,0,0.85)');
+      grad.addColorStop(0, 'rgba(0,0,0,0.6)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = grad;
       g.fillRect(x, y, sw, sh);

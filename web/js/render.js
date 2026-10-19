@@ -94,9 +94,9 @@ export class Renderer {
   }
 
   buildLights() {
-    this.scene.add(new THREE.AmbientLight(0x6a5448, 1.0));
-    this.scene.add(new THREE.HemisphereLight(0xc0a890, 0x2a1810, 0.6));
-    const moon = new THREE.DirectionalLight(0xffe0c0, 1.15);
+    this.scene.add(new THREE.AmbientLight(0x8a7060, 1.6));
+    this.scene.add(new THREE.HemisphereLight(0xe0c8a8, 0x3a2418, 1.0));
+    const moon = new THREE.DirectionalLight(0xfff0d8, 1.6);
     moon.castShadow = true;
     moon.shadow.mapSize.set(1024, 1024);
     const sc = moon.shadow.camera;
@@ -323,12 +323,16 @@ export class Renderer {
     h.root.position.set(ox + p.x, 0, oz - p.z);
     h.root.scale.setScalar(1.4);
     h.body.position.y = bob;
-    const yaw = Math.atan2(p.aimX, p.aimZ);
+    // Face where you walk; when standing still, face what you shoot at.
+    const yaw = moving && Math.hypot(p.vx, p.vz) > 0.5 ? Math.atan2(p.vx, p.vz) : Math.atan2(p.aimX, p.aimZ);
     const cur = h.root.rotation.y;
     const diff = ((yaw - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     h.root.rotation.y = cur + diff * Math.min(1, dt * 14);
-    h.root.rotation.x = 0.85;
-    h.body.rotation.x = moving ? 0.12 : 0;
+    // Lean back towards the camera so the face reads, like a front-facing sprite.
+    h.root.rotation.x = -0.6;
+    const sway = moving ? Math.sin(this.time * 12) : 0;
+    h.body.rotation.z = sway * 0.09;
+    h.body.rotation.x = moving ? 0.1 : 0;
     const dash = p.dashT > 0;
     h.body.scale.set(dash ? 0.85 : 1, dash ? 0.85 : 1, dash ? 1.3 : 1);
     h.root.visible = !(p.iframes > 0 && Math.floor(this.time * 18) % 2 === 0) || w.state !== 'play';
@@ -366,7 +370,7 @@ export class Renderer {
       let yaw = Math.atan2(p.x - e.x, p.z - e.z);
       if ((e.type === 'ram' || e.type === 'grub') && e.face !== undefined) yaw = Math.atan2(Math.cos(e.face), Math.sin(e.face));
       m.root.rotation.y = yaw;
-      m.root.rotation.x = e.boss ? 0.55 : e.type === 'fly' || e.type === 'grub' ? 0.3 : 0.75;
+      m.root.rotation.x = e.boss ? -0.35 : e.type === 'fly' || e.type === 'grub' ? -0.2 : -0.5;
       // per-type animation
       if (e.type === 'fly') {
         m.body.position.y = 0.9 + Math.sin(t * 6) * 0.08;
