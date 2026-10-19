@@ -31,13 +31,18 @@ oppdatering over den gamle.
   - ♛ **Skattkammer**: en gratis gjenstand.
   - ¢ **Butikk**: gjenstander og hjerter for mynter.
   - ☠ **Boss**: slå den, så åpner det seg en luke ned til neste etasje.
-- Drepte fiender slipper **XP**. Nytt nivå gir et valg mellom tre
-  velsignelser, som i Vampire Survivors.
-- Slå bossen i fjerde etasje for å vinne. En run tar rundt 15–20 minutter.
+- Du blir bare sterkere av **gjenstander**, som i Isaac. Det finnes ingen
+  nivåer eller XP.
+- Hver etasje har sin egen boss. Slå bossen i fjerde etasje for å vinne.
 
 ### Gjenstander og synergier
 
-Det finnes 22 gjenstander. De virker sammen gjennom noen felles regler:
+Det finnes 36 passive gjenstander. Noen øker egenskapene dine (skade,
+skuddtakt, fart, rekkevidde, liv). Andre endrer hvordan skuddene gjør skade:
+de kan sprette av vegger, komme tilbake som bumerang, vokse mens de flyr,
+sende lyn videre, slå fiender bakover eller få døde fiender til å sprekke i
+skudd. Hvert femte skudd kan være et ladet kjempeskudd. De virker sammen
+gjennom noen felles regler:
 
 - Skudd kan ha **elementer**: ild (brenner), is (bremser og fryser fast),
   gift (skader over tid, giftsky når fienden dør).
@@ -51,10 +56,22 @@ Det finnes 22 gjenstander. De virker sammen gjennom noen felles regler:
 
 ### Fiender
 
-Fluer som svermer, larver som kryper rundt steinene, øyne som holder avstand
-og skyter, beinværer som stanger når du står på linje med dem, og slim som
-deler seg. Bossen **Den oppsvulmede** skyter ringer av blod, hopper mot deg og
-kaller inn fluer, og blir sintere når den har halvt liv igjen.
+Tolv vanlige fiender, og flere dukker opp jo dypere du kommer:
+- fluer som svermer, og larver som kryper rundt steinene
+- øyne som holder avstand og skyter
+- beinværer som stanger når du står på linje med dem, og slim som deler seg
+- edderkopper som piler rundt, og blodklumper som spytter i fire retninger
+- «Den tomme», som begynner å løpe når den er skadet
+- skallevoktere som gjemmer seg i jorda (skudd preller av)
+- hoppere som lander der du står, og pestfluer som sprekker i skudd
+- gjenferd som blir gjennomsiktige og skyter søkende skudd
+
+Fem bosser, som alle blir sintere når de har halvt liv igjen:
+- **Den oppsvulmede**: blodringer, hopp og fluer
+- **Glupskjeften**: hopper, lander på deg og spytter hagleskudd
+- **Svermmoren**: et flygende reir som føder fluer og spinner spiraler
+- **Beinherren**: stormer tvers over rommet og knuses mot veggen i et regn av bein
+- **Dypets øye**: alltid i siste etasje. Spiraler, en stirrende strøm av skudd, forsvinner og dukker opp igjen
 
 ---
 
@@ -75,8 +92,8 @@ Tastatur: WASD eller piltaster styrer, mellomrom dasher og Esc pauser.
 ```
 web/js/config.js     Alle tuning-tall. Start her når noe føles feil.
 web/js/dungeon.js    Generering av etasjer: romkart, steinmønstre, fiender.
-web/js/enemies.js    Fiendetyper og oppførsel, inkludert bossen.
-web/js/items.js      Gjenstander, velsignelser (level-up) og forvandlinger.
+web/js/enemies.js    Fiendetyper og oppførsel, inkludert bossene.
+web/js/items.js      Gjenstander og forvandlinger.
 web/js/world.js      Simuleringen: bevegelse, kollisjon, skudd, statuser, rom.
 web/js/render2d.js   Pikselrendereren: rom, figurer, effekter, HUD og minikart.
 web/js/sprites.js    Alle figurer og ting, tegnet i kode (Canvas 2D).

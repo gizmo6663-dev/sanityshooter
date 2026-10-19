@@ -1,6 +1,7 @@
-// Items (found in treasure rooms, shops and after bosses), level-up perks
-// (Survivors-style, from xp) and transformations (three items sharing a
-// tag). Items only change numbers in the stats object; the combinations
+// Passive items (found in treasure rooms, shops and after bosses) and
+// transformations (three items sharing a tag). Like in Isaac, items are the
+// only way to get stronger: they either raise your stats or change how your
+// shots deal damage. Items only change numbers in the stats object; the combinations
 // come from shared rules in the world: shots carry elements and every effect
 // a shot spawns (explosions, splits) carries them too, orbiting wisps apply
 // the same on-hit effects, and so on.
@@ -61,6 +62,39 @@ export const ITEMS = {
     desc: 'Forgiftede fiender tar 50 % mer skade.', apply: (s) => { s.poisonVuln += 0.5; s.poison += 0.3; } },
   shard:   { name: 'Isskår', icon: '🧊', tags: ['ice', 'tear'], text: 'Kald presisjon',
     desc: 'Frosne fiender tar dobbel skade.', apply: (s) => { s.frozenMult = 2; s.ice += 0.3; } },
+
+  // Stat ups
+  steak:   { name: 'Rått kjøtt', icon: '🥩', tags: ['body'], text: 'Liv og skade opp',
+    desc: '+1 hjertebeholder og +0,5 skade.', apply: (s) => { s.maxHp += 2; s.damage += 0.5; } },
+  shroom:  { name: 'Svart sopp', icon: '🍄', tags: ['poison'], text: 'Mye skade opp',
+    desc: '+1,5 skade, men skuddene flyr litt saktere.', apply: (s) => { s.damage += 1.5; s.shotSpeedMult *= 0.88; } },
+  boots:   { name: 'Graverens støvler', icon: '🥾', tags: [], text: 'Fart opp',
+    desc: '+25 % fart.', apply: (s) => { s.speedMult *= 1.25; } },
+  halo:    { name: 'Svart glorie', icon: '⭕', tags: ['occult'], text: 'Alt opp',
+    desc: '+0,5 skade, +0,4 skuddtakt, +10 % fart og +15 % rekkevidde.',
+    apply: (s) => { s.damage += 0.5; s.fireRate += 0.4; s.speedMult *= 1.1; s.rangeMult *= 1.15; } },
+  bloodtear: { name: 'Blodtåre', icon: '🔻', tags: ['body', 'tear'], text: 'Kritisk',
+    desc: '25 % sjanse for at et treff gjør dobbel skade.', apply: (s) => { s.crit += 0.25; } },
+
+  // New ways to deal damage
+  rubber:  { name: 'Sprettkule', icon: '🔴', tags: ['tear'], text: 'Sprett',
+    desc: 'Skuddene spretter av vegger og steiner to ganger.', apply: (s) => { s.bounce += 2; s.rangeMult *= 1.2; } },
+  sickle:  { name: 'Bumerangsigd', icon: '🌙', tags: ['tear'], text: 'Den kommer tilbake',
+    desc: 'Skuddene snur og flyr tilbake til deg, og kan treffe på vei tilbake også.', apply: (s) => { s.boomerang = true; } },
+  sulfur:  { name: 'Svovelhjerte', icon: '🌑', tags: ['fire', 'occult'], text: 'Ladet',
+    desc: 'Hvert femte skudd er stort, gjør tredobbel skade og går gjennom alt.', apply: (s) => { s.charge = 5; } },
+  janus:   { name: 'Janusmaske', icon: '🎭', tags: ['tear', 'occult'], text: 'Øyne i nakken',
+    desc: 'Skyter også et skudd rett bakover.', apply: (s) => { s.backShot = true; } },
+  storm:   { name: 'Stormkrone', icon: '⚡', tags: ['occult'], text: 'Lynkjede',
+    desc: 'Treff sender et lyn videre til to fiender i nærheten (halv skade, med skuddets element).', apply: (s) => { s.chain += 2; } },
+  cannon:  { name: 'Kanonkule', icon: '🎱', tags: ['tear', 'body'], text: 'Vokser',
+    desc: 'Skuddene vokser mens de flyr og gjør opp til dobbel skade langt unna.', apply: (s) => { s.grow += 1; s.rangeMult *= 1.1; } },
+  hammer:  { name: 'Smedens hammer', icon: '🔨', tags: ['body'], text: 'Tilbakeslag',
+    desc: 'Skuddene slår fiender langt bakover, og kan lamme dem et øyeblikk.', apply: (s) => { s.knock *= 3.5; s.stun += 0.15; } },
+  corpse:  { name: 'Likstøv', icon: '⚱️', tags: ['occult', 'body'], text: 'Etterskjelv',
+    desc: 'Fiender du dreper sprekker i seks skudd.', apply: (s) => { s.deathShots += 6; } },
+  armor:   { name: 'Beinrustning', icon: '🛡️', tags: ['body'], text: 'Skjold',
+    desc: 'Blokkerer det første treffet i hvert rom.', apply: (s) => { s.shield += 1; } },
 };
 
 export const ITEM_IDS = Object.keys(ITEMS);
@@ -85,22 +119,8 @@ export function activeTransforms(items) {
   return Object.keys(TRANSFORMS).filter((t) => (c[t] || 0) >= 3);
 }
 
-// --- Level-up perks --------------------------------------------------------
-export const PERKS = {
-  sharp:  { name: 'Skarpere', icon: '🗡️', desc: '+12 % skade', weight: 3, apply: (s) => { s.damageMult *= 1.12; } },
-  hands:  { name: 'Raske hender', icon: '✋', desc: '+12 % skuddtakt', weight: 3, apply: (s) => { s.fireRateMult *= 1.12; } },
-  feet:   { name: 'Lette føtter', icon: '🦶', desc: '+8 % fart', weight: 2, apply: (s) => { s.speedMult *= 1.08; } },
-  reach:  { name: 'Lang arm', icon: '🏹', desc: '+15 % rekkevidde og skuddfart', weight: 2, apply: (s) => { s.rangeMult *= 1.15; s.shotSpeedMult *= 1.1; } },
-  heal:   { name: 'Pusterom', icon: '❤️‍🩹', desc: 'Helbred et helt hjerte', weight: 2, apply: () => {}, instant: (w) => w.healPlayer(2) },
-  vigor:  { name: 'Seigt liv', icon: '❤️', desc: '+1 hjertebeholder', weight: 1, apply: (s) => { s.maxHp += 2; }, instant: (w) => w.healPlayer(2) },
-  magnet: { name: 'Grådige fingre', icon: '🧲', desc: '+40 % plukkeradius', weight: 1, apply: (s) => { s.magnetMult *= 1.4; } },
-  crit:   { name: 'Blodsmak', icon: '🎯', desc: '+10 % sjanse for dobbel skade', weight: 2, apply: (s) => { s.crit += 0.1; } },
-  pierce: { name: 'Gjennomtrengende', icon: '📌', desc: 'Skuddene går gjennom +1 fiende', weight: 1, apply: (s) => { s.pierce += 1; } },
-  dash:   { name: 'Skyggesteg', icon: '💨', desc: '-15 % nedkjøling på dash', weight: 1, apply: (s) => { s.dashCooldownMult *= 0.85; } },
-};
-
-/** Stats from base values + perks + items + transformations. */
-export function buildStats(items, perks) {
+/** Stats from base values + items + transformations. */
+export function buildStats(items) {
   const s = {
     damage: Cfg.DAMAGE, damageMult: 1,
     fireRate: Cfg.FIRE_RATE, fireRateMult: 1,
@@ -113,9 +133,10 @@ export function buildStats(items, perks) {
     orbitals: 0, thorns: 0, leech: 0,
     dashDamage: 0, dashCooldownMult: 1,
     magnetMult: 1, coinMult: 1,
+    bounce: 0, boomerang: false, charge: 0, backShot: false, chain: 0, grow: 0,
+    knock: 1, stun: 0, deathShots: 0, shield: 0,
     pyro: false, shatter: false, plague: false,
   };
-  for (const id of perks) PERKS[id].apply(s);
   for (const id of items) ITEMS[id].apply(s);
   for (const t of activeTransforms(items)) TRANSFORMS[t].apply(s);
   s.maxHp = Math.min(Cfg.MAX_HP_CAP, s.maxHp);

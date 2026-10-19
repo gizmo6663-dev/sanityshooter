@@ -1,11 +1,11 @@
-// Entry point: screens, input (floating joystick + dash) and the main loop.
-// The game itself lives in world.js, the drawing in render.js.
+// Entry point: screens, input (anchored joystick + dash) and the main loop.
+// The game itself lives in world.js, the drawing in render2d.js.
 
 import { Cfg } from './config.js';
 import { World } from './world.js';
 import { Progress } from './progress.js';
 import { Renderer } from './render2d.js';
-import { ITEMS, PERKS, TRANSFORMS, activeTransforms } from './items.js';
+import { ITEMS, TRANSFORMS, activeTransforms } from './items.js';
 import { ENEMIES } from './enemies.js';
 import { sfx, unlockAudio } from './audio.js';
 
@@ -16,7 +16,7 @@ const prog = new Progress();
 prog.load();
 const renderer = new Renderer($('stage'));
 let world = null;
-let mode = 'title';          // title | play | levelup | pause | end
+let mode = 'title';          // title | play | pause | end
 
 // --- Input -------------------------------------------------------------------
 const input = { mx: 0, mz: 0, dash: false, stick: null, ox: 0, oy: 0, keys: {} };
@@ -75,11 +75,11 @@ function moveVector() {
 }
 
 // --- Screens -------------------------------------------------------------------
-const SCREENS = ['title', 'levelup', 'pause', 'end'];
+const SCREENS = ['title', 'pause', 'end'];
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
 function setMode(m) {
   mode = m;
-  show('hud', m === 'play' || m === 'levelup' || m === 'pause');
+  show('hud', m === 'play' || m === 'pause');
   for (const s of SCREENS) show(s, m === s);
   hideTip();
   if (m !== 'play') {
@@ -136,7 +136,7 @@ function statsText() {
   return [
     `Skade ${(s.damage * s.damageMult).toFixed(1)} · Skuddtakt ${(s.fireRate * s.fireRateMult).toFixed(1)}/s`,
     `Fart ${(s.speed * s.speedMult).toFixed(1)} · Rekkevidde ${(s.range * s.rangeMult).toFixed(1)}`,
-    `Nivå ${world.player.level} · Drap ${world.kills} · Tid ${fmtTime(world.time)}`,
+    `Drap ${world.kills} · Tid ${fmtTime(world.time)}`,
   ].join('<br>');
 }
 
@@ -147,29 +147,10 @@ function openPause() {
   setMode('pause');
 }
 
-function openLevelUp() {
-  const box = $('perk-cards');
-  box.innerHTML = '';
-  for (const id of world.choices) {
-    const p = PERKS[id];
-    const c = document.createElement('button');
-    c.className = 'card';
-    c.innerHTML = `<div class="icon">${p.icon}</div><div><div class="name">${p.name}</div><div class="desc">${p.desc}</div></div>`;
-    c.addEventListener('click', () => {
-      world.choosePerk(id);
-      sfx.levelup();
-      setMode(world.state === 'levelup' ? 'levelup' : 'play');
-      if (world.state === 'levelup') openLevelUp();
-    });
-    box.appendChild(c);
-  }
-  setMode('levelup');
-}
-
 function openEnd() {
   const won = world.state === 'won';
   $('end-title').textContent = won ? 'DU NÅDDE BUNNEN' : 'DU DØDE';
-  $('end-sub').innerHTML = `${FLOOR_NAMES[world.floor]} · ${fmtTime(world.time)} · ${world.kills} drept · nivå ${world.player.level}` +
+  $('end-sub').innerHTML = `${FLOOR_NAMES[world.floor]} · ${fmtTime(world.time)} · ${world.kills} drept` +
     (won ? '<br>Mørket slipper taket. Denne gangen.' : '');
   itemChips($('end-items'), world.items);
   setMode('end');
@@ -240,7 +221,6 @@ function handleEvents() {
       case 'door': sfx.door(); break;
       case 'clear': sfx.clear(); break;
       case 'coin': sfx.coin(); break;
-      case 'xp': sfx.xp(); break;
       case 'heal': sfx.heal(); break;
       case 'explode': sfx.explode(); break;
       case 'slam': sfx.slam(); break;
@@ -266,7 +246,8 @@ function handleEvents() {
           announce(`${FLOOR_NAMES[world.floor]}`, ['Det lukter fukt og forråtnelse.', 'De døde ligger ikke stille her.', 'Bein på bein på bein.', 'Herfra kommer ingen opp igjen.'][world.floor], 3);
         }
         break;
-      case 'levelup': sfx.levelup(); break;
+      case 'block': sfx.hit(); break;
+      case 'zap': sfx.zap(); break;
       case 'dead': sfx.dead(); break;
       case 'won': sfx.win(); break;
     }
@@ -286,12 +267,11 @@ function frame(now) {
     input.dash = false;
     handleEvents();
     updateHud();
-    if (world.state === 'levelup') openLevelUp();
     if (world.state === 'dead' || world.state === 'won') {
       endTimer += dt;
       if (endTimer > 1.6) { prog.recordRun(world); openEnd(); }
     }
-  } else if (world && mode !== 'pause' && mode !== 'levelup') {
+  } else if (world && mode !== 'pause') {
     world.time += dt;
   }
   renderer.render(dt);

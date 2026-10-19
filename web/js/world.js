@@ -7,13 +7,12 @@
 
 import { Cfg } from './config.js';
 import { generateFloor, OPPOSITE, tileIndex, toTileI, toTileJ, tileX, tileZ, DOOR_TILE } from './dungeon.js';
-import { ENEMIES } from './enemies.js';
-import { ITEMS, ITEM_IDS, PERKS, buildStats, activeTransforms } from './items.js';
+import { ENEMIES, pickBoss } from './enemies.js';
+import { ITEMS, ITEM_IDS, buildStats, activeTransforms } from './items.js';
 
 const W = Cfg.ROOM_W, D = Cfg.ROOM_D, HW = W / 2, HD = D / 2;
 const TAU = Math.PI * 2;
 const DIR_VEC = { n: [0, 1], s: [0, -1], e: [1, 0], w: [-1, 0] };
-const XP_VALUE = { fly: 1, grub: 2, eye: 3, ram: 4, slime: 3, bloat: 40 };
 
 let nextId = 1;
 
@@ -21,26 +20,22 @@ export class World {
   constructor(rand = Math.random) {
     this.rand = rand;
     this.time = 0;
-    this.state = 'play';     // play | transition | levelup | dead | won
+    this.state = 'play';     // play | transition | dead | won
     this.events = [];
     this.shake = 0;
     this.kills = 0;
     this.items = [];
-    this.perks = [];
     this.pool = ITEM_IDS.slice();
-    this.stats = buildStats([], []);
+    this.stats = buildStats([]);
     this.player = {
-      x: 0, z: 0, r: Cfg.PLAYER_R, hp: Cfg.PLAYER_HP, coins: 0,
-      xp: 0, level: 1, xpNext: Cfg.XP_FIRST,
+      x: 0, z: 0, r: Cfg.PLAYER_R, hp: Cfg.PLAYER_HP, coins: 0, shield: 0, shotCount: 0,
       vx: 0, vz: 0, fireCd: 0, dashT: 0, dashCd: 0, dashX: 0, dashZ: 1, iframes: 0,
       faceX: 0, faceZ: -1, aimX: 0, aimZ: -1, moving: false, leechCount: 0, dashHit: new Set(),
     };
     this.enemies = [];
     this.shots = [];
     this.eshots = [];
-    this.orbs = [];
     this.clouds = [];
-    this.choices = null;
     this.flow = new Int16Array(W * D);
     this.flowTimer = 0;
     this.transition = null;
@@ -53,12 +48,12 @@ export class World {
   newFloor(f) {
     this.floor = f;
     this.dungeon = generateFloor(f, this.rand);
+    this.bossType = pickBoss(f, this.rand);
     for (const r of this.dungeon.rooms.values()) {
       if (r.type === 'treasure') r.pickups.push({ kind: 'item', id: this.drawItem(), x: 0, z: 0 });
       if (r.type === 'shop') {
-        r.pickups.push({ kind: 'item', id: this.drawItem(), x: -2, z: 1, price: Cfg.ITEM_PRICE });
-        r.pickups.push({ kind: 'item', id: this.drawItem(), x: 2, z: 1, price: Cfg.ITEM_PRICE });
-        r.pickups.push({ kind: 'heart', x: 0, z: -1, price: Cfg.HEART_PRICE });
+        for (const x of [-2.5, 0, 2.5]) r.pickups.push({ kind: 'item', id: this.drawItem(), x, z: 1.5, price: Cfg.ITEM_PRICE });
+        r.pickups.push({ kind: 'heart', x: 0, z: -1.5, price: Cfg.HEART_PRICE });
       }
     }
     this.enterRoom(this.dungeon.start, null);
@@ -83,9 +78,6 @@ export class World {
 
   enterRoom(key, fromDir) {
     const prev = this.roomKey;
-    // Anything left behind is collected on the way out.
-    for (const o of this.orbs) this.gainXp(o.value);
-    this.orbs = [];
     this.shots = [];
     this.eshots = [];
     this.clouds = [];
@@ -107,10 +99,11 @@ export class World {
       this.state = 'transition';
     }
     if (!room.cleared) {
+      p.shield = this.stats.shield;
       if (room.type === 'boss') {
-        const b = this.spawnEnemy('bloat', 0, 3, false);
+        const b = this.spawnEnemy(this.bossType, 0, 3, false);
         b.spawnT = 1.2;
-        this.events.push({ type: 'boss', name: ENEMIES.bloat.name });
+        this.events.push({ type: 'boss', name: ENEMIES[this.bossType].name });
       }
       for (const s of room.spawns) {
         const e = this.spawnEnemy(s.type, tileX(s.i) + (this.rand() - 0.5) * 0.4, tileZ(s.j) + (this.rand() - 0.5) * 0.4, false);
@@ -126,10 +119,11 @@ export class World {
     const scale = 1 + Cfg.ENEMY_HP_PER_FLOOR * this.floor;
     const e = {
       id: nextId++, type, x, z, vx: 0, vz: 0, r: d.r, flying: !!d.flying, boss: !!d.boss,
-      hp: d.hp * scale * (d.boss ? 1 + 0.3 * this.floor : 1), maxHp: 0,
+      hp: d.hp * scale * (d.boss ? 1 + 0.15 * this.floor : 1), maxHp: 0,
       t: 0, phase: this.rand() * TAU, face: -Math.PI / 2, alive: true,
       spawnT: instant ? 0 : Cfg.SPAWN_DELAY, flash: 0,
-      burn: 0, chill: 0, frozen: 0, poison: 0, lift: 0, hitCd: new Map(),
+      burn: 0, chill: 0, frozen: 0, poison: 0, stun: 0, lift: 0, hitCd: new Map(),
+      air: false, armor: false, ghost: false,
     };
     e.maxHp = e.hp;
     if (d.init) d.init(e);
@@ -145,7 +139,7 @@ export class World {
     this.shake = Math.max(0, this.shake - dt * 18);
     if (this.state === 'transition') {
       this.transition.t += dt;
-      if (this.transition.t >= Cfg.TRANSITION) { this.transition = null; this.state = this.choices ? 'levelup' : 'play'; }
+      if (this.transition.t >= Cfg.TRANSITION) { this.transition = null; this.state = 'play'; }
       return;
     }
     if (this.state !== 'play') return;
@@ -206,7 +200,7 @@ export class World {
     } else {
       // Ease into and out of motion instead of snapping to full speed.
       const sp = s.speed * s.speedMult;
-      const k = Math.min(1, dt * (p.moving ? 16 : 20));
+      const k = Math.min(1, dt * Cfg.PLAYER_ACCEL);
       p.vx += (mx * sp - p.vx) * k;
       p.vz += (mz * sp - p.vz) * k;
       vx = p.vx; vz = p.vz;
@@ -229,7 +223,7 @@ export class World {
     }
   }
 
-  active(e) { return e.alive && e.spawnT <= 0; }
+  active(e) { return e.alive && e.spawnT <= 0 && !e.ghost; }
 
   pickTarget() {
     const p = this.player;
@@ -238,6 +232,7 @@ export class World {
       if (!this.active(e)) continue;
       let d = Math.hypot(e.x - p.x, e.z - p.z);
       if (!this.hasLOS(p, e)) d += 6;
+      if (e.armor || e.air) d += 4;
       if (d < bd) { bd = d; best = e; }
     }
     return best;
@@ -245,22 +240,27 @@ export class World {
 
   shotEffects() {
     const s = this.stats;
-    return { fire: s.fire, ice: s.ice, poison: s.poison };
+    return { fire: s.fire, ice: s.ice, poison: s.poison, blood: s.crit >= 0.2 ? 1 : 0 };
   }
 
   firePlayer(angle) {
     const p = this.player, s = this.stats;
     const n = s.shots;
-    const dmg = s.damage * s.damageMult;
+    p.shotCount++;
+    const big = s.charge && p.shotCount % s.charge === 0;
+    const dmg = s.damage * s.damageMult * (big ? 3 : 1);
     const speed = s.shotSpeed * s.shotSpeedMult;
-    for (let k = 0; k < n; k++) {
-      const a = angle + (k - (n - 1) / 2) * s.spread;
+    const angles = [];
+    for (let k = 0; k < n; k++) angles.push(angle + (k - (n - 1) / 2) * s.spread);
+    if (s.backShot) angles.push(angle + Math.PI);
+    for (const a of angles) {
+      const r = Cfg.SHOT_R * s.shotSize * (big ? 1.9 : 1);
       this.shots.push({
         x: p.x + Math.cos(a) * 0.3, z: p.z + Math.sin(a) * 0.3,
         vx: Math.cos(a) * speed, vz: Math.sin(a) * speed,
-        dmg, r: Cfg.SHOT_R * s.shotSize, left: s.range * s.rangeMult,
-        pierce: s.pierce, hit: new Set(), child: false, t: Math.random() * 6,
-        fx: this.shotEffects(),
+        dmg, r, r0: r, left: s.range * s.rangeMult, dist: 0, bounce: s.bounce,
+        pierce: big ? 99 : s.pierce, hit: new Set(), child: false, t: Math.random() * 6,
+        fx: this.shotEffects(), big,
       });
     }
     this.events.push({ type: 'shoot' });
@@ -269,6 +269,12 @@ export class World {
   hurtPlayer(n) {
     const p = this.player;
     if (p.iframes > 0 || p.dashT > 0 || this.state !== 'play') return;
+    if (p.shield > 0) {
+      p.shield--;
+      p.iframes = Cfg.IFRAMES * 0.7;
+      this.events.push({ type: 'block' });
+      return;
+    }
     p.hp -= n;
     p.iframes = Cfg.IFRAMES;
     this.shake = Math.max(this.shake, 5);
@@ -280,7 +286,7 @@ export class World {
         const sp = this.stats.shotSpeed;
         this.shots.push({
           x: p.x, z: p.z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, dmg: this.stats.damage * this.stats.damageMult,
-          r: Cfg.SHOT_R, left: 5, pierce: 1, hit: new Set(), child: true, t: 0, fx: this.shotEffects(),
+          r: Cfg.SHOT_R, r0: Cfg.SHOT_R, left: 5, dist: 0, bounce: 0, pierce: 1, hit: new Set(), child: true, t: 0, fx: this.shotEffects(),
         });
       }
     }
@@ -289,43 +295,6 @@ export class World {
   healPlayer(n) {
     const p = this.player;
     p.hp = Math.min(this.stats.maxHp, p.hp + n);
-  }
-
-  gainXp(v) {
-    const p = this.player;
-    p.xp += v;
-    if (p.xp >= p.xpNext && !this.choices) {
-      p.xp -= p.xpNext;
-      p.level++;
-      p.xpNext = Math.round(Cfg.XP_FIRST * Math.pow(Cfg.XP_GROWTH, p.level - 1));
-      this.choices = this.rollPerks(3);
-      this.state = this.state === 'play' ? 'levelup' : this.state;
-      this.events.push({ type: 'levelup' });
-    }
-  }
-
-  rollPerks(n) {
-    const pool = Object.keys(PERKS);
-    const out = [];
-    while (out.length < n && pool.length) {
-      let total = 0;
-      for (const id of pool) total += PERKS[id].weight;
-      let r = this.rand() * total, k = 0;
-      for (; k < pool.length - 1; k++) { r -= PERKS[pool[k]].weight; if (r <= 0) break; }
-      out.push(pool.splice(k, 1)[0]);
-    }
-    return out;
-  }
-
-  choosePerk(id) {
-    if (!this.choices || !this.choices.includes(id)) return;
-    this.perks.push(id);
-    this.choices = null;
-    this.refreshStats();
-    if (PERKS[id].instant) PERKS[id].instant(this);
-    this.state = 'play';
-    // Several level-ups can queue up.
-    if (this.player.xp >= this.player.xpNext) this.gainXp(0);
   }
 
   addItem(id) {
@@ -340,7 +309,7 @@ export class World {
   }
 
   refreshStats() {
-    this.stats = buildStats(this.items, this.perks);
+    this.stats = buildStats(this.items);
     this.player.hp = Math.min(this.player.hp, this.stats.maxHp);
   }
 
@@ -489,22 +458,27 @@ export class World {
     return this.moveCircle(e, dx * f, dz * f);
   }
 
-  enemyShot(x, z, angle, speed, dmg = 1) {
-    this.eshots.push({ x, z, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, r: 0.15, life: 5, dmg });
+  /** Enemy projectile. opts.home makes it steer towards the player. */
+  enemyShot(x, z, angle, speed, dmg = 1, opts = {}) {
+    speed *= Cfg.ENEMY_PACE;
+    this.eshots.push({ x, z, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, r: 0.15, life: opts.life || 5, dmg, home: opts.home || 0 });
   }
 
   // --- Enemies --------------------------------------------------------------------
   updateEnemies(dt) {
     const p = this.player;
+    // Enemies run on a faster clock than their base numbers.
+    const edt = dt * Cfg.ENEMY_PACE;
     for (const e of this.enemies) {
       if (!e.alive) continue;
       e.flash = Math.max(0, e.flash - dt * 6);
       if (e.spawnT > 0) { e.spawnT -= dt; continue; }
       this.updateStatus(e, dt);
       if (!e.alive) continue;
-      if (e.frozen <= 0) ENEMIES[e.type].update.call(ENEMIES[e.type], e, this, dt);
+      if (e.stun > 0) e.stun -= dt;
+      else if (e.frozen <= 0) ENEMIES[e.type].update.call(ENEMIES[e.type], e, this, edt);
       // contact damage
-      if (!e.air && Math.hypot(e.x - p.x, e.z - p.z) < e.r + p.r * 0.8) {
+      if (!e.air && !e.ghost && Math.hypot(e.x - p.x, e.z - p.z) < e.r + p.r * 0.8) {
         this.hurtPlayer(e.boss && this.floor > 0 ? 2 : Cfg.CONTACT_DMG);
       }
     }
@@ -542,7 +516,7 @@ export class World {
 
   /** Applies a hit with on-hit effects (elements). */
   damageEnemy(e, dmg, fx) {
-    if (!e.alive || e.spawnT > 0) return;
+    if (!e.alive || e.spawnT > 0 || e.armor) return;
     const s = this.stats;
     if (fx) {
       if (fx.fire && this.rand() < fx.fire) e.burn = 3;
@@ -553,6 +527,7 @@ export class World {
       }
     }
     if (this.rand() < s.crit) dmg *= 2;
+    if (fx && s.stun && !e.boss && this.rand() < s.stun) e.stun = 0.7;
     this.hurtEnemy(e, dmg, fx, false);
   }
 
@@ -574,8 +549,17 @@ export class World {
     this.events.push({ type: 'kill', x: e.x, z: e.z, enemy: e.type, boss: e.boss, small: !!e.small });
     const def = ENEMIES[e.type];
     if (def.onDeath) def.onDeath(e, this);
-    const xp = (XP_VALUE[e.type] || 1) * (e.small ? 0.4 : 1);
-    this.orbs.push({ x: e.x, z: e.z, value: Math.max(1, Math.round(xp)), t: 0 });
+    if (s.deathShots && !e.boss) {
+      const n = s.deathShots, sp = s.shotSpeed * s.shotSpeedMult * 0.8;
+      for (let k = 0; k < n; k++) {
+        const a = (k / n) * TAU + e.phase;
+        this.shots.push({
+          x: e.x, z: e.z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, dmg: s.damage * s.damageMult * 0.5,
+          r: Cfg.SHOT_R * 0.8, r0: Cfg.SHOT_R * 0.8, left: 3, dist: 0, bounce: 0, pierce: 0,
+          hit: new Set([e.id]), child: true, t: 0, fx: this.shotEffects(),
+        });
+      }
+    }
     if (this.rand() < Cfg.ENEMY_COIN) {
       const [cx, cz] = this.freeSpot(e.x, e.z);
       this.room.pickups.push({ kind: 'coin', x: cx, z: cz, value: 1 });
@@ -629,9 +613,35 @@ export class World {
         const sp = Math.hypot(vx, vz) || 1, w = Math.sin(sh.t * 14) * 2.2 * s.wobble;
         vx += (-sh.vz / sp) * w; vz += (sh.vx / sp) * w;
       }
+      if (sh.back) {
+        // boomerang: fly home to the player
+        const p = this.player, sp = Math.hypot(sh.vx, sh.vz);
+        const dx = p.x - sh.x, dz = p.z - sh.z, d = Math.hypot(dx, dz) || 1;
+        if (d < 0.4) { sh.dead = true; continue; }
+        sh.vx = (dx / d) * sp; sh.vz = (dz / d) * sp;
+        vx = sh.vx; vz = sh.vz;
+      }
       sh.x += vx * dt; sh.z += vz * dt;
-      sh.left -= Math.hypot(sh.vx, sh.vz) * dt;
-      if (sh.left <= 0 || Math.abs(sh.x) > HW || Math.abs(sh.z) > HD || this.solid(toTileI(sh.x), toTileJ(sh.z))) {
+      const step = Math.hypot(sh.vx, sh.vz) * dt;
+      sh.left -= step;
+      sh.dist += step;
+      if (s.grow && !sh.child) sh.r = sh.r0 * (1 + 0.7 * s.grow * Math.min(1, sh.dist / (s.range * s.rangeMult)));
+      if (sh.left <= 0 && s.boomerang && !sh.child && !sh.back) {
+        sh.back = true;
+        sh.hit.clear();
+        sh.left = 30;
+      }
+      const blocked = !sh.back && (Math.abs(sh.x) > HW || Math.abs(sh.z) > HD || this.solid(toTileI(sh.x), toTileJ(sh.z)));
+      if (blocked && sh.bounce > 0) {
+        // bounce: back up and flip the axis that hit
+        sh.x -= vx * dt; sh.z -= vz * dt;
+        const hx = Math.abs(sh.x + vx * dt) > HW || this.solid(toTileI(sh.x + vx * dt), toTileJ(sh.z));
+        const hz = Math.abs(sh.z + vz * dt) > HD || this.solid(toTileI(sh.x), toTileJ(sh.z + vz * dt));
+        if (hx || !hz) sh.vx = -sh.vx;
+        if (hz) sh.vz = -sh.vz;
+        sh.bounce--;
+        this.events.push({ type: 'splat', x: sh.x, z: sh.z, fx: sh.fx });
+      } else if (sh.left <= 0 || blocked) {
         this.shotEnd(sh, null);
         continue;
       }
@@ -639,17 +649,47 @@ export class World {
         if (!this.active(e) || sh.hit.has(e.id) || e.air) continue;
         if (Math.hypot(e.x - sh.x, e.z - sh.z) > e.r + sh.r) continue;
         sh.hit.add(e.id);
-        this.damageEnemy(e, sh.dmg, sh.fx);
+        if (e.armor) {
+          // glances off a hiding enemy
+          this.events.push({ type: 'clink', x: sh.x, z: sh.z });
+          this.shotEnd(sh, null);
+          break;
+        }
+        const dmg = sh.dmg * (s.grow && !sh.child ? 1 + s.grow * Math.min(1, sh.dist / (s.range * s.rangeMult)) : 1);
+        this.damageEnemy(e, dmg, sh.fx);
         this.events.push({ type: 'hit', x: sh.x, z: sh.z, fx: sh.fx });
+        if (s.chain && !sh.child) this.chainZap(e, dmg * 0.5, sh.fx);
         // knockback
         const sp = Math.hypot(sh.vx, sh.vz) || 1;
-        if (!e.boss && e.alive) this.moveCircle(e, (sh.vx / sp) * 0.12, (sh.vz / sp) * 0.12);
+        const kb = 0.12 * s.knock * (sh.big ? 2 : 1);
+        if (!e.boss && e.alive && !ENEMIES[e.type].still) this.moveCircle(e, (sh.vx / sp) * kb, (sh.vz / sp) * kb);
         if (sh.pierce > 0) { sh.pierce--; this.shotSplit(sh); continue; }
         this.shotEnd(sh, e);
         break;
       }
     }
     this.shots = this.shots.filter((sh) => !sh.dead);
+  }
+
+  /** Lightning jumps from enemy to enemy. */
+  chainZap(from, dmg, fx) {
+    const pts = [[from.x, from.z]];
+    const hit = new Set([from.id]);
+    let cur = from;
+    for (let k = 0; k < this.stats.chain; k++) {
+      let best = null, bd = 3.2;
+      for (const e of this.enemies) {
+        if (!this.active(e) || hit.has(e.id) || e.air) continue;
+        const d = Math.hypot(e.x - cur.x, e.z - cur.z);
+        if (d < bd) { bd = d; best = e; }
+      }
+      if (!best) break;
+      hit.add(best.id);
+      pts.push([best.x, best.z]);
+      this.damageEnemy(best, dmg, fx);
+      cur = best;
+    }
+    if (pts.length > 1) this.events.push({ type: 'zap', pts });
   }
 
   shotEnd(sh, target) {
@@ -670,7 +710,7 @@ export class World {
       const a = a0 + (k - (n - 1) / 2) * 0.7;
       this.shots.push({
         x: sh.x, z: sh.z, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, dmg: sh.dmg * 0.5,
-        r: sh.r * 0.7, left: 2.6, pierce: 0, hit: new Set(sh.hit), child: true, t: 0, fx: sh.fx,
+        r: sh.r * 0.7, r0: sh.r * 0.7, left: 2.6, dist: 0, bounce: 0, pierce: 0, hit: new Set(sh.hit), child: true, t: 0, fx: sh.fx,
       });
     }
   }
@@ -678,6 +718,14 @@ export class World {
   updateEnemyShots(dt) {
     const p = this.player;
     for (const b of this.eshots) {
+      if (b.home) {
+        const sp = Math.hypot(b.vx, b.vz);
+        let cur = Math.atan2(b.vz, b.vx);
+        const want = Math.atan2(p.z - b.z, p.x - b.x);
+        const diff = ((want - cur + Math.PI * 3) % TAU) - Math.PI;
+        cur += Math.max(-b.home * dt, Math.min(b.home * dt, diff));
+        b.vx = Math.cos(cur) * sp; b.vz = Math.sin(cur) * sp;
+      }
       b.x += b.vx * dt; b.z += b.vz * dt; b.life -= dt;
       if (b.life <= 0 || Math.abs(b.x) > HW || Math.abs(b.z) > HD || this.solid(toTileI(b.x), toTileJ(b.z))) {
         b.dead = true;
@@ -740,17 +788,6 @@ export class World {
   updatePickups(dt) {
     const p = this.player, s = this.stats;
     const magnet = Cfg.MAGNET * s.magnetMult;
-    for (const o of this.orbs) {
-      o.t += dt;
-      const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz);
-      const cleared = this.room.cleared;
-      if (d < magnet || (cleared && o.t > 0.5)) {
-        const sp = cleared ? 12 : 7;
-        o.x += (dx / (d || 1)) * sp * dt; o.z += (dz / (d || 1)) * sp * dt;
-      }
-      if (d < p.r + 0.2) { o.dead = true; this.gainXp(o.value); this.events.push({ type: 'xp' }); }
-    }
-    this.orbs = this.orbs.filter((o) => !o.dead);
 
     const room = this.room;
     for (const it of room.pickups) {

@@ -121,20 +121,6 @@ button { font-family: inherit; border: 0; cursor: pointer; color: inherit; backg
 .stats { margin-top: 20px; color: var(--bone-dim); font-size: 14px; text-align: center; line-height: 1.6; }
 .help { position: absolute; bottom: calc(env(safe-area-inset-bottom) + 24px); left: 20px; right: 20px; text-align: center; font-size: 13px; color: var(--bone-dim); font-style: italic; }
 
-.cards { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
-.card {
-  display: flex; gap: 14px; align-items: center; text-align: left; padding: 12px 14px;
-  background: var(--panel); border: 1px solid rgba(216,207,188,0.2); border-radius: 6px;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.6); animation: rise 0.3s ease-out both;
-}
-.card:nth-child(2) { animation-delay: 0.06s; }
-.card:nth-child(3) { animation-delay: 0.12s; }
-.card:active { border-color: var(--blood-bright); }
-.card .icon { font-size: 32px; width: 46px; text-align: center; flex: none; }
-.card .name { font-size: 18px; }
-.card .desc { font-size: 13px; color: var(--bone-dim); font-style: italic; margin-top: 2px; }
-@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
-
 .item-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; max-width: 360px; margin: 10px 0 14px; }
 .item-chip {
   width: 42px; height: 42px; font-size: 24px; border-radius: 6px; background: rgba(0,0,0,0.5);

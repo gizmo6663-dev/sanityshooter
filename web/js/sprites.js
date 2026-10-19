@@ -1001,16 +1001,6 @@ export function closedDoor(ctx, x, y, s, dir, style = 'normal') {
   }
 }
 
-export function xpGem(ctx, x, y, s) {
-  const r = 0.09 * s, cy = y - 0.2 * s;
-  ctx.beginPath();
-  ctx.moveTo(x, cy - r * 1.4); ctx.lineTo(x + r, cy); ctx.lineTo(x, cy + r * 1.4); ctx.lineTo(x - r, cy); ctx.closePath();
-  ctx.fillStyle = volume(ctx, x, cy, r * 1.4, '#e8fff4', '#5ae0a0', '#1a6a4a');
-  ctx.fill();
-  ink(ctx, s, 0.03);
-  ctx.stroke();
-}
-
 export function wisp(ctx, x, y, s, color = '#ffb060') {
   const cy = y - 0.6 * s;
   glow(ctx, x, cy, 0.35 * s, '255,180,90', 0.35);
@@ -1032,5 +1022,416 @@ export function cloud(ctx, x, y, s, seed = 1) {
     const r = rng(seed + k);
     blobPath(ctx, x + (r() - 0.5) * 0.9 * s, y - 0.25 * s + (r() - 0.5) * 0.4 * s, (0.25 + r() * 0.2) * s, (0.18 + r() * 0.1) * s, 0.3, seed + k, 8);
     ctx.fill();
+  }
+}
+
+// --- More enemies -----------------------------------------------------------------
+export function spider(ctx, x, y, s, t, { run = false } = {}) {
+  shadow(ctx, x, y, s, 0.3, 0.32);
+  const by = y - 0.22 * s;
+  // eight jointed legs
+  for (const sx of [-1, 1]) {
+    for (let k = 0; k < 4; k++) {
+      const ph = Math.sin(t * (run ? 30 : 6) + k * 1.7 + (sx > 0 ? 1 : 0)) * 0.04 * s;
+      const ax = x + sx * 0.08 * s, ay = by + (k - 1.5) * 0.05 * s;
+      const kx = x + sx * (0.24 + k * 0.02) * s, ky = by - 0.14 * s + (k - 1.5) * 0.07 * s + ph;
+      const fx = x + sx * (0.36 + Math.abs(k - 1.5) * 0.03) * s, fy = y - 0.02 * s + (k - 1.5) * 0.06 * s - ph;
+      ink(ctx, s, 0.05);
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+      ctx.strokeStyle = '#3a2c26'; ctx.lineWidth = s * 0.022;
+      ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(kx, ky); ctx.lineTo(fx, fy); ctx.stroke();
+    }
+  }
+  // abdomen with a pale mark
+  ellipsePath(ctx, x, by + 0.02 * s, 0.17 * s, 0.14 * s);
+  paint(ctx, s, volume(ctx, x, by + 0.02 * s, 0.17 * s, '#5a4038', '#2a1a16', '#0c0604'), 0.05);
+  ctx.fillStyle = 'rgba(220,200,170,0.55)';
+  ctx.beginPath(); ctx.moveTo(x, by - 0.06 * s); ctx.lineTo(x + 0.05 * s, by + 0.03 * s); ctx.lineTo(x, by + 0.1 * s); ctx.lineTo(x - 0.05 * s, by + 0.03 * s); ctx.fill();
+  // head with a cluster of red eyes
+  ellipsePath(ctx, x, by - 0.13 * s, 0.1 * s, 0.08 * s);
+  paint(ctx, s, volume(ctx, x, by - 0.13 * s, 0.1 * s, '#4a3430', '#24140f', '#0a0402'), 0.045);
+  for (const [ex, ey, er] of [[-0.04, -0.15, 0.025], [0.04, -0.15, 0.025], [-0.015, -0.11, 0.015], [0.015, -0.11, 0.015]]) {
+    ctx.fillStyle = '#ff4030';
+    ctx.beginPath(); ctx.arc(x + ex * s, by + ey * s, er * s, 0, Math.PI * 2); ctx.fill();
+  }
+  // fangs
+  ctx.fillStyle = '#e8dcc0';
+  for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + sx * 0.03 * s, by - 0.07 * s); ctx.lineTo(x + sx * 0.015 * s, by - 0.02 * s); ctx.lineTo(x + sx * 0.005 * s, by - 0.07 * s); ctx.fill(); }
+}
+
+export function clot(ctx, x, y, s, t, { squish = 0 } = {}) {
+  shadow(ctx, x, y, s, 0.42, 0.35);
+  const sq = 1 + Math.sin(t * 4) * 0.05 + squish * 0.18;
+  const w = 0.38 * s * sq, h = 0.36 * s / sq;
+  const cy = y - h * 0.95;
+  // drips running down
+  for (const [dx, len] of [[-0.25, 0.18], [0.2, 0.12], [0.02, 0.22]]) {
+    ctx.fillStyle = '#6a0a0e';
+    ctx.beginPath(); ctx.ellipse(x + dx * s, y - 0.04 * s + len * 0.1 * s, 0.035 * s, (0.05 + len * 0.2) * s, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  blobPath(ctx, x, cy, w, h, 0.22, 13, 14);
+  ctx.fillStyle = volume(ctx, x, cy, w, '#e0504a', '#9a1418', '#3a0204');
+  ctx.fill();
+  ctx.save(); ctx.clip();
+  speckle(ctx, x, cy, w * 0.8, h * 0.8, 14, 'rgba(40,0,0,0.35)', s * 0.03, 8);
+  ctx.strokeStyle = 'rgba(255,140,120,0.35)';
+  ctx.lineWidth = s * 0.02;
+  ctx.beginPath(); ctx.arc(x - w * 0.2, cy - h * 0.1, w * 0.6, Math.PI * 1.1, Math.PI * 1.6); ctx.stroke();
+  ctx.restore();
+  ink(ctx, s, 0.06);
+  blobPath(ctx, x, cy, w, h, 0.22, 13, 14);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.ellipse(x - w * 0.4, cy - h * 0.45, w * 0.16, h * 0.1, -0.6, 0, Math.PI * 2); ctx.fill();
+  // small sunken eyes and a gaping mouth
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * w * 0.32, cy - h * 0.12, 0.05 * s, 0.06 * s);
+    ctx.fillStyle = '#1a0202'; ctx.fill();
+    ctx.fillStyle = '#ffd0a0';
+    ctx.beginPath(); ctx.arc(x + sx * w * 0.32, cy - h * 0.14, 0.015 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  ellipsePath(ctx, x, cy + h * 0.35, (0.1 + squish * 0.05) * s, (0.06 + squish * 0.06) * s);
+  paint(ctx, s, '#1a0204', 0.03);
+}
+
+export function gaper(ctx, x, y, s, t, { angry = false } = {}) {
+  shadow(ctx, x, y, s, 0.32, 0.38);
+  const step = Math.sin(t * (angry ? 14 : 9));
+  const SKIN_L = '#d8cbb8', SKIN = '#a89886', SKIN_D = '#5a4c40';
+  // legs
+  for (const sx of [-1, 1]) {
+    const lift = Math.max(0, step * sx) * 0.06 * s;
+    ctx.beginPath();
+    ctx.roundRect(x + sx * 0.1 * s - 0.05 * s, y - 0.32 * s - lift, 0.1 * s, 0.3 * s, 0.03 * s);
+    paint(ctx, s, '#4a3c34', 0.045);
+  }
+  // ragged body
+  ctx.beginPath();
+  ctx.moveTo(x - 0.2 * s, y - 0.72 * s);
+  ctx.quadraticCurveTo(x - 0.25 * s, y - 0.4 * s, x - 0.18 * s, y - 0.28 * s);
+  ctx.lineTo(x - 0.1 * s, y - 0.33 * s); ctx.lineTo(x - 0.02 * s, y - 0.26 * s); ctx.lineTo(x + 0.07 * s, y - 0.32 * s); ctx.lineTo(x + 0.18 * s, y - 0.27 * s);
+  ctx.quadraticCurveTo(x + 0.25 * s, y - 0.4 * s, x + 0.2 * s, y - 0.72 * s);
+  ctx.closePath();
+  paint(ctx, s, volume(ctx, x, y - 0.5 * s, 0.25 * s, '#7a6a5a', '#4a3e34', '#1e1814'), 0.05);
+  // arms reaching forward
+  for (const sx of [-1, 1]) {
+    const sw = step * sx * 0.03 * s;
+    ink(ctx, s, 0.09);
+    ctx.beginPath(); ctx.moveTo(x + sx * 0.18 * s, y - 0.66 * s); ctx.lineTo(x + sx * 0.25 * s, y - 0.48 * s + sw); ctx.stroke();
+    ctx.strokeStyle = SKIN; ctx.lineWidth = s * 0.05; ctx.stroke();
+    ctx.fillStyle = SKIN_L;
+    ctx.beginPath(); ctx.arc(x + sx * 0.25 * s, y - 0.46 * s + sw, 0.035 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  // bald head
+  const hy = y - 0.92 * s + Math.abs(step) * 0.02 * s;
+  ellipsePath(ctx, x, hy, 0.22 * s, 0.24 * s);
+  paint(ctx, s, volume(ctx, x, hy, 0.22 * s, SKIN_L, SKIN, SKIN_D), 0.06);
+  // veins on the scalp
+  ctx.strokeStyle = 'rgba(90,60,90,0.4)';
+  ctx.lineWidth = s * 0.01;
+  ctx.beginPath(); ctx.moveTo(x - 0.1 * s, hy - 0.2 * s); ctx.lineTo(x - 0.06 * s, hy - 0.12 * s); ctx.lineTo(x - 0.09 * s, hy - 0.06 * s); ctx.stroke();
+  // hollow eyes (they glow red when it runs)
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * 0.085 * s, hy - 0.01 * s, 0.055 * s, 0.07 * s);
+    ctx.fillStyle = '#0a0404'; ctx.fill();
+    if (angry) { ctx.fillStyle = '#ff3020'; ctx.beginPath(); ctx.arc(x + sx * 0.085 * s, hy, 0.018 * s, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(120,20,20,0.7)';
+    ctx.fillRect(x + sx * 0.085 * s - 0.008 * s, hy + 0.05 * s, 0.016 * s, 0.08 * s);
+  }
+  // gaping mouth
+  ellipsePath(ctx, x, hy + 0.13 * s, 0.07 * s, 0.07 * s);
+  paint(ctx, s, '#1a0404', 0.03);
+  ctx.fillStyle = '#8a1418';
+  ctx.fillRect(x - 0.01 * s, hy + 0.18 * s, 0.02 * s, 0.07 * s);
+}
+
+export function host(ctx, x, y, s, t, { up = 0 } = {}) {
+  shadow(ctx, x, y, s, 0.42, 0.35);
+  // the skull rises out of the mound
+  const sy = y - 0.22 * s - up * 0.32 * s;
+  const BONE = '#ece0c4', BONE_D = '#a89878';
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - s, y - 2 * s, 2 * s, 2 * s - 0.2 * s); ctx.clip();
+  ellipsePath(ctx, x, sy, 0.24 * s, 0.24 * s);
+  paint(ctx, s, volume(ctx, x, sy, 0.24 * s, '#fffbea', BONE, BONE_D), 0.06);
+  ctx.strokeStyle = 'rgba(60,40,20,0.7)';
+  ctx.lineWidth = s * 0.012;
+  ctx.beginPath(); ctx.moveTo(x - 0.06 * s, sy - 0.22 * s); ctx.lineTo(x - 0.1 * s, sy - 0.12 * s); ctx.lineTo(x - 0.06 * s, sy - 0.06 * s); ctx.stroke();
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * 0.09 * s, sy, 0.06 * s, 0.07 * s);
+    ctx.fillStyle = '#100604'; ctx.fill();
+    if (up > 0.5) { glow(ctx, x + sx * 0.09 * s, sy, 0.08 * s, '255,60,30', 0.7); ctx.fillStyle = '#ff6a3a'; ctx.beginPath(); ctx.arc(x + sx * 0.09 * s, sy, 0.02 * s, 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.fillStyle = '#100604';
+  ctx.beginPath(); ctx.moveTo(x, sy + 0.07 * s); ctx.lineTo(x - 0.025 * s, sy + 0.12 * s); ctx.lineTo(x + 0.025 * s, sy + 0.12 * s); ctx.fill();
+  if (up > 0.5) { ellipsePath(ctx, x, sy + 0.18 * s, 0.07 * s, 0.04 * s); ctx.fillStyle = '#100604'; ctx.fill(); }
+  ctx.restore();
+  // mound of dirt and bones in front
+  blobPath(ctx, x, y - 0.12 * s, 0.4 * s, 0.17 * s, 0.25, 31, 12);
+  paint(ctx, s, volume(ctx, x, y - 0.12 * s, 0.4 * s, '#7a5a40', '#4a3020', '#1e120a'), 0.055);
+  speckle(ctx, x, y - 0.12 * s, 0.32 * s, 0.1 * s, 10, 'rgba(20,10,4,0.5)', s * 0.02, 5);
+  ctx.save();
+  ctx.translate(x + 0.18 * s, y - 0.14 * s); ctx.rotate(-0.4);
+  ctx.fillStyle = BONE; ctx.fillRect(-0.09 * s, -0.015 * s, 0.18 * s, 0.03 * s);
+  ink(ctx, s, 0.02); ctx.strokeRect(-0.09 * s, -0.015 * s, 0.18 * s, 0.03 * s);
+  ctx.restore();
+}
+
+export function leaper(ctx, x, y, s, t, { air = false } = {}) {
+  const FL = '#c88a7a', F = '#8a4a40', FD = '#3a1612';
+  const by = y - (air ? 0.5 : 0.28) * s;
+  // legs: folded when sitting, stretched in the air
+  for (const sx of [-1, 1]) {
+    ink(ctx, s, 0.08);
+    ctx.beginPath();
+    if (air) { ctx.moveTo(x + sx * 0.15 * s, by + 0.05 * s); ctx.lineTo(x + sx * 0.25 * s, by + 0.25 * s); ctx.lineTo(x + sx * 0.2 * s, by + 0.42 * s); }
+    else { ctx.moveTo(x + sx * 0.15 * s, by + 0.05 * s); ctx.lineTo(x + sx * 0.36 * s, by - 0.08 * s); ctx.lineTo(x + sx * 0.32 * s, y - 0.02 * s); }
+    ctx.stroke();
+    ctx.strokeStyle = F; ctx.lineWidth = s * 0.05; ctx.stroke();
+  }
+  // squat body
+  blobPath(ctx, x, by, 0.25 * s, 0.2 * s, 0.15, 17, 12);
+  paint(ctx, s, volume(ctx, x, by, 0.25 * s, FL, F, FD), 0.055);
+  speckle(ctx, x, by, 0.2 * s, 0.14 * s, 8, 'rgba(60,10,10,0.35)', s * 0.02, 3);
+  // wide frog mouth and bulging eyes
+  ctx.strokeStyle = '#2a0806';
+  ctx.lineWidth = s * 0.03;
+  ctx.beginPath(); ctx.arc(x, by - 0.02 * s, 0.15 * s, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * 0.12 * s, by - 0.16 * s, 0.07 * s, 0.07 * s);
+    paint(ctx, s, volume(ctx, x + sx * 0.12 * s, by - 0.16 * s, 0.07 * s, '#fff8d0', '#e8d890', '#8a7a40'), 0.035);
+    ctx.fillStyle = '#0a0602';
+    ctx.fillRect(x + sx * 0.12 * s - 0.04 * s, by - 0.17 * s, 0.08 * s, 0.022 * s);
+  }
+}
+
+export function boomfly(ctx, x, y, s, t) {
+  const hy = y - 0.85 * s + Math.sin(t * 6) * 0.06 * s;
+  shadow(ctx, x, y, s, 0.28, 0.3);
+  const flap = Math.sin(t * 48) * 0.5;
+  for (const sx of [-1, 1]) {
+    ctx.save();
+    ctx.translate(x + sx * 0.1 * s, hy - 0.15 * s);
+    ctx.rotate(sx * (0.5 + flap));
+    ellipsePath(ctx, sx * 0.16 * s, -0.03 * s, 0.19 * s, 0.08 * s);
+    ctx.fillStyle = 'rgba(225,235,210,0.7)';
+    ctx.fill();
+    ink(ctx, s, 0.03); ctx.stroke();
+    ctx.restore();
+  }
+  // swollen, pustule-covered body
+  ellipsePath(ctx, x, hy + 0.02 * s, 0.27 * s, 0.25 * s);
+  paint(ctx, s, volume(ctx, x, hy + 0.02 * s, 0.27 * s, '#d8d070', '#8a8a2a', '#3a3a08'), 0.055);
+  for (const [px, py, pr] of [[-0.12, 0.08, 0.06], [0.1, 0.1, 0.05], [0.14, -0.06, 0.04], [-0.04, 0.16, 0.04]]) {
+    ellipsePath(ctx, x + px * s, hy + py * s, pr * s, pr * s);
+    paint(ctx, s, volume(ctx, x + px * s, hy + py * s, pr * s, '#fff8c0', '#e0c050', '#8a6010'), 0.025);
+  }
+  // red eyes
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * 0.09 * s, hy - 0.12 * s, 0.065 * s, 0.065 * s);
+    paint(ctx, s, volume(ctx, x + sx * 0.09 * s, hy - 0.12 * s, 0.065 * s, '#ff6a5a', '#b81818', '#4a0606'), 0.03);
+    glint(ctx, x + sx * 0.09 * s - 0.02 * s, hy - 0.14 * s, 0.015 * s);
+  }
+}
+
+export function wraith(ctx, x, y, s, t) {
+  const hy = y - 0.95 * s + Math.sin(t * 2) * 0.08 * s;
+  shadow(ctx, x, y, s, 0.28, 0.22);
+  // tattered robe tapering into a wisp
+  ctx.beginPath();
+  ctx.moveTo(x - 0.22 * s, hy - 0.05 * s);
+  ctx.quadraticCurveTo(x - 0.3 * s, hy + 0.3 * s, x - 0.18 * s, hy + 0.5 * s);
+  for (let k = 0; k <= 6; k++) {
+    const u = k / 6;
+    const px = x - 0.18 * s + u * 0.36 * s;
+    const py = hy + (k % 2 ? 0.42 : 0.56) * s + Math.sin(t * 5 + k) * 0.04 * s;
+    ctx.lineTo(px, py);
+  }
+  ctx.quadraticCurveTo(x + 0.3 * s, hy + 0.3 * s, x + 0.22 * s, hy - 0.05 * s);
+  ctx.quadraticCurveTo(x + 0.22 * s, hy - 0.42 * s, x, hy - 0.44 * s);
+  ctx.quadraticCurveTo(x - 0.22 * s, hy - 0.42 * s, x - 0.22 * s, hy - 0.05 * s);
+  ctx.closePath();
+  paint(ctx, s, volume(ctx, x, hy, 0.35 * s, '#a8b0b8', '#5a626e', '#1e222a'), 0.055);
+  // hood opening, dark inside, with burning eyes
+  ellipsePath(ctx, x, hy - 0.12 * s, 0.14 * s, 0.17 * s);
+  ctx.fillStyle = '#06080a'; ctx.fill();
+  for (const sx of [-1, 1]) {
+    glow(ctx, x + sx * 0.055 * s, hy - 0.13 * s, 0.07 * s, '120,230,255', 0.8);
+    ctx.fillStyle = '#c8f4ff';
+    ctx.beginPath(); ctx.arc(x + sx * 0.055 * s, hy - 0.13 * s, 0.022 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  // bony hands
+  for (const sx of [-1, 1]) {
+    ctx.strokeStyle = '#d8d0c0'; ctx.lineWidth = s * 0.02;
+    for (let f = 0; f < 3; f++) { ctx.beginPath(); ctx.moveTo(x + sx * 0.24 * s, hy + 0.1 * s); ctx.lineTo(x + sx * (0.3 + f * 0.015) * s, hy + (0.16 + f * 0.03) * s); ctx.stroke(); }
+  }
+}
+
+// --- More bosses ------------------------------------------------------------------
+export function gorger(ctx, x, y, s, t, { mouth = 0 } = {}) {
+  shadow(ctx, x, y, s, 1.1, 0.45);
+  const cx = x, cy = y - 0.95 * s;
+  const p = 1 + Math.sin(t * 3) * 0.025;
+  const FL = '#9aa088', F = '#5e6a52', FD = '#20261a';
+  // stubby legs
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, x + sx * 0.6 * s, y - 0.12 * s, 0.22 * s, 0.14 * s);
+    paint(ctx, s, volume(ctx, x + sx * 0.6 * s, y - 0.12 * s, 0.22 * s, FL, F, FD), 0.06);
+  }
+  // body
+  blobPath(ctx, cx, cy, 1.05 * s * p, 0.92 * s / p, 0.1, 23, 18);
+  ctx.fillStyle = volume(ctx, cx, cy, 1.05 * s, FL, F, FD);
+  ctx.fill();
+  ctx.save(); ctx.clip();
+  speckle(ctx, cx, cy, 0.9 * s, 0.8 * s, 30, 'rgba(30,40,20,0.3)', s * 0.05, 19);
+  speckle(ctx, cx, cy - 0.4 * s, 0.7 * s, 0.3 * s, 14, 'rgba(220,230,180,0.25)', s * 0.03, 29);
+  ctx.restore();
+  ink(ctx, s, 0.08);
+  blobPath(ctx, cx, cy, 1.05 * s * p, 0.92 * s / p, 0.1, 23, 18);
+  ctx.stroke();
+  // little mean eyes on top
+  for (const sx of [-1, 1]) {
+    ellipsePath(ctx, cx + sx * 0.32 * s, cy - 0.58 * s, 0.11 * s, 0.09 * s);
+    paint(ctx, s, '#f6eed0', 0.04);
+    ellipsePath(ctx, cx + sx * 0.3 * s, cy - 0.56 * s, 0.05 * s, 0.05 * s);
+    ctx.fillStyle = '#100404'; ctx.fill();
+    ink(ctx, s, 0.05);
+    ctx.beginPath(); ctx.moveTo(cx + sx * 0.46 * s, cy - 0.74 * s); ctx.lineTo(cx + sx * 0.18 * s, cy - 0.64 * s); ctx.stroke();
+  }
+  // the huge mouth
+  const mh = (0.3 + mouth * 0.18) * s;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 0.12 * s, 0.82 * s, mh + 0.06 * s, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#7a2a30'; ctx.fill();
+  ink(ctx, s, 0.07); ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 0.13 * s, 0.72 * s, mh, 0, 0, Math.PI * 2);
+  ctx.fillStyle = volume(ctx, cx, cy + 0.13 * s, 0.72 * s, '#5a0a10', '#2a0408', '#080002'); ctx.fill();
+  ctx.fillStyle = '#b03040';
+  ctx.beginPath(); ctx.ellipse(cx + 0.1 * s, cy + 0.13 * s + mh * 0.55, 0.32 * s, mh * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  for (let k = 0; k < 10; k++) {
+    const u = (k + 0.5) / 10, tx = cx - 0.68 * s + u * 1.36 * s;
+    const edge = Math.sqrt(1 - Math.pow((u - 0.5) * 2, 2));
+    const top = cy + 0.13 * s - mh * edge, bot = cy + 0.13 * s + mh * edge;
+    ctx.beginPath(); ctx.moveTo(tx - 0.06 * s, top); ctx.lineTo(tx + 0.06 * s, top); ctx.lineTo(tx, top + 0.15 * s); ctx.closePath();
+    paint(ctx, s, '#efe6c8', 0.02);
+    ctx.beginPath(); ctx.moveTo(tx - 0.05 * s, bot); ctx.lineTo(tx + 0.05 * s, bot); ctx.lineTo(tx, bot - 0.12 * s); ctx.closePath();
+    paint(ctx, s, '#ddd2b0', 0.02);
+  }
+}
+
+export function hive(ctx, x, y, s, t, { pulse = 0 } = {}) {
+  shadow(ctx, x, y, s, 0.9, 0.35);
+  const cy = y - 1.5 * s + Math.sin(t * 1.5) * 0.08 * s;
+  const p = 1 + Math.sin(t * 4) * 0.03 + pulse * 0.08;
+  // fleshy stalk hanging from above
+  ctx.strokeStyle = INK; ctx.lineWidth = s * 0.2;
+  ctx.beginPath(); ctx.moveTo(x, cy - 0.8 * s); ctx.lineTo(x + Math.sin(t) * 0.05 * s, cy - 1.6 * s); ctx.stroke();
+  ctx.strokeStyle = '#6a3028'; ctx.lineWidth = s * 0.13; ctx.stroke();
+  // the nest: stacked lumpy rings
+  for (let k = 4; k >= 0; k--) {
+    const ry = cy - 0.55 * s + k * 0.27 * s;
+    const rw = (0.55 + Math.sin((k / 4) * Math.PI) * 0.4) * s * p;
+    blobPath(ctx, x, ry, rw, 0.2 * s, 0.12, 50 + k, 14);
+    paint(ctx, s, volume(ctx, x, ry, rw, '#d8a080', k % 2 ? '#9a5a40' : '#a8664a', '#3a1a10'), 0.06);
+  }
+  // holes, some with flies poking out
+  for (const [hx, hy, r] of [[-0.45, -0.15, 0.1], [0.35, -0.3, 0.09], [0.1, 0.15, 0.12], [-0.2, 0.42, 0.08], [0.52, 0.25, 0.08], [-0.1, -0.5, 0.07]]) {
+    ellipsePath(ctx, x + hx * s * p, cy + hy * s, r * s, r * 0.8 * s);
+    ctx.fillStyle = '#1a0604'; ctx.fill();
+    ink(ctx, s, 0.03); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,200,120,0.25)';
+    ctx.beginPath(); ctx.arc(x + hx * s * p - r * 0.3 * s, cy + hy * s - r * 0.3 * s, r * 0.25 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  // drips of honey-like ichor
+  ctx.fillStyle = '#c89040';
+  for (const dx of [-0.3, 0.15, 0.4]) {
+    const d = ((t * 0.6 + dx * 3) % 1);
+    ctx.beginPath(); ctx.ellipse(x + dx * s, cy + 0.75 * s + d * 0.3 * s, 0.03 * s, 0.05 * s, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+export function bonelord(ctx, x, y, s, t, { windup = 0 } = {}) {
+  // A giant version of the bone ram with a crown of horns.
+  ram(ctx, x, y, s * 2.2, t * (windup ? 2 : 1));
+  const hy = y - (0.05 + 0.68) * s * 2.2;
+  for (let k = -2; k <= 2; k++) {
+    const a = -Math.PI / 2 + k * 0.35;
+    const bx = x + Math.cos(a) * 0.38 * s, by = hy - 0.45 * s + Math.sin(a) * 0.1 * s;
+    ctx.beginPath();
+    ctx.moveTo(bx - 0.06 * s, by + 0.05 * s);
+    ctx.lineTo(bx + Math.cos(a) * 0.3 * s, by + Math.sin(a) * 0.3 * s - Math.abs(k) * 0.02 * s);
+    ctx.lineTo(bx + 0.06 * s, by + 0.05 * s);
+    ctx.closePath();
+    paint(ctx, s, volume(ctx, bx, by, 0.2 * s, '#5a3a3a', '#2a1414', '#0a0404'), 0.05);
+  }
+  if (windup) {
+    for (const sx of [-1, 1]) glow(ctx, x + sx * 0.19 * s, hy - 0.04 * s, 0.25 * s, '255,40,20', 0.7);
+  }
+}
+
+export function deepEye(ctx, x, y, s, t, { look = [0, 1], stare = 0 } = {}) {
+  shadow(ctx, x, y, s, 1.0, 0.35);
+  const cy = y - 1.6 * s + Math.sin(t * 1.2) * 0.1 * s;
+  // tentacles hanging below
+  for (let k = 0; k < 7; k++) {
+    const bx = x + (k - 3) * 0.24 * s;
+    for (const [w, c] of [[0.17, INK], [0.11, '#4a1a3a'], [0.04, '#8a3a6a']]) {
+      ctx.strokeStyle = c; ctx.lineWidth = s * w * (1 - Math.abs(k - 3) * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(bx, cy + 0.6 * s);
+      ctx.bezierCurveTo(bx + Math.sin(t * 2 + k) * 0.25 * s, cy + 1.0 * s, bx - Math.sin(t * 1.6 + k) * 0.25 * s, cy + 1.3 * s, bx + Math.sin(t * 2.4 + k * 2) * 0.15 * s, cy + 1.55 * s);
+      ctx.stroke();
+    }
+  }
+  // fleshy socket around the eye
+  blobPath(ctx, x, cy, 1.15 * s, 1.0 * s, 0.14, 61, 18);
+  paint(ctx, s, volume(ctx, x, cy, 1.15 * s, '#a85a7a', '#5a2440', '#1a0610'), 0.08);
+  // eyelids
+  ellipsePath(ctx, x, cy, 0.92 * s, 0.82 * s);
+  ctx.fillStyle = '#3a0e22'; ctx.fill();
+  // the eye itself
+  ctx.save();
+  ellipsePath(ctx, x, cy, 0.86 * s, 0.76 * s);
+  ctx.clip();
+  ctx.fillStyle = volume(ctx, x, cy, 0.86 * s, '#fff8f0', '#e8d0c0', '#8a5a50');
+  ctx.fillRect(x - s, cy - s, 2 * s, 2 * s);
+  const r = rng(71);
+  ctx.strokeStyle = 'rgba(170,20,40,0.7)';
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 14) * Math.PI * 2;
+    let px = x + Math.cos(a) * 0.86 * s, py = cy + Math.sin(a) * 0.76 * s;
+    for (let seg = 0; seg < 4; seg++) {
+      ctx.lineWidth = s * (0.035 - seg * 0.007);
+      const nx = px + (x - px) * 0.22 + (r() - 0.5) * 0.18 * s, ny = py + (cy - py) * 0.22 + (r() - 0.5) * 0.18 * s;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(nx, ny); ctx.stroke();
+      px = nx; py = ny;
+    }
+  }
+  const ix = x + look[0] * 0.28 * s, iy = cy + look[1] * 0.24 * s;
+  ellipsePath(ctx, ix, iy, 0.42 * s, 0.42 * s);
+  const gi = ctx.createRadialGradient(ix, iy, 0.05 * s, ix, iy, 0.42 * s);
+  gi.addColorStop(0, stare ? '#ff6040' : '#e0d040'); gi.addColorStop(0.5, stare ? '#a01010' : '#8a3a10'); gi.addColorStop(1, '#2a0804');
+  ctx.fillStyle = gi; ctx.fill();
+  ink(ctx, s, 0.05); ctx.stroke();
+  // slit pupil
+  ctx.beginPath();
+  ctx.ellipse(ix, iy, (stare ? 0.12 : 0.07) * s, 0.3 * s, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#050102'; ctx.fill();
+  glint(ctx, ix + 0.15 * s, iy - 0.18 * s, 0.07 * s, 0.85);
+  ctx.restore();
+  ink(ctx, s, 0.07);
+  ellipsePath(ctx, x, cy, 0.86 * s, 0.76 * s);
+  ctx.stroke();
+  // teeth-like lashes around the lids
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const ex = x + Math.cos(a) * 0.9 * s, ey = cy + Math.sin(a) * 0.8 * s;
+    ctx.beginPath();
+    ctx.moveTo(ex + Math.cos(a + 1.57) * 0.05 * s, ey + Math.sin(a + 1.57) * 0.05 * s);
+    ctx.lineTo(ex + Math.cos(a) * 0.16 * s, ey + Math.sin(a) * 0.16 * s);
+    ctx.lineTo(ex - Math.cos(a + 1.57) * 0.05 * s, ey - Math.sin(a + 1.57) * 0.05 * s);
+    ctx.closePath();
+    paint(ctx, s, '#e8dcc0', 0.02);
   }
 }

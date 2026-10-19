@@ -110,7 +110,6 @@ function botInput(w) {
     return [mx, mz, dash];
   }
   // room clear: pick things up, then move on
-  if (w.orbs.length) return [0, 0, false];
   const wanted = w.room.pickups.filter((it) => it.kind === 'coin' ||
     (it.kind === 'heart' && p.hp < w.stats.maxHp && (!it.price || p.coins >= it.price)) ||
     (it.kind === 'item' && (!it.price || p.coins >= it.price)));
@@ -129,8 +128,7 @@ for (let n = 1; n <= RUNS; n++) {
   const w = new World();
   const floorTimes = [];
   let floorStart = 0, lastFloor = 0, stuck = 0, lastRoom = w.roomKey;
-  while ((w.state === 'play' || w.state === 'transition' || w.state === 'levelup') && w.time < 3600) {
-    if (w.state === 'levelup') w.choosePerk(w.choices[Math.floor(Math.random() * w.choices.length)]);
+  while ((w.state === 'play' || w.state === 'transition') && w.time < 3600) {
     const [mx, mz, dash] = botInput(w);
     w.update(DT, mx, mz, dash);
     w.events.length = 0;
@@ -141,7 +139,6 @@ for (let n = 1; n <= RUNS; n++) {
   if (w.state === 'won') wins++;
   const items = w.items.map((id) => ITEMS[id].icon).join('');
   const how = w.state === 'won' ? 'VANT' : w.state === 'dead' ? 'død ' : 'fast';
-  console.log(`run ${String(n).padStart(2)}: ${how} etasje ${w.floor + 1}  ${(w.time / 60).toFixed(1)} min [${floorTimes.join('s ')}s]  nivå ${w.player.level}  drap ${w.kills}  liv ${Math.max(0, w.player.hp)}/${w.stats.maxHp}  ${items}`);
-  if (VERBOSE) console.log('   perks:', w.perks.join(','));
+  console.log(`run ${String(n).padStart(2)}: ${how} etasje ${w.floor + 1}  ${(w.time / 60).toFixed(1)} min [${floorTimes.join('s ')}s]  boss ${w.bossType}  drap ${w.kills}  liv ${Math.max(0, w.player.hp)}/${w.stats.maxHp}  ${items}`);
 }
 console.log(`vant ${wins}/${RUNS}`);
