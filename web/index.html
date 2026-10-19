@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Mob Blaster</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <!-- In-round HUD -->
+  <div id="hud" class="hidden">
+    <div class="topbar">
+      <div class="pill level">NIVÅ <b id="hud-level">1</b></div>
+      <div class="pill coins">🪙 <b id="hud-coins">0</b></div>
+      <button id="btn-pause" class="pill round" aria-label="Pause">❚❚</button>
+    </div>
+    <div id="hint">Hold fingeren nede og dra for å sikte</div>
+    <div class="bottombar">
+      <div class="castle">
+        <span>🛡️</span>
+        <div class="bar"><div id="hud-castle-fill"></div></div>
+        <b id="hud-castle">10</b>
+      </div>
+      <button id="btn-giant" aria-label="Send kjempe">
+        <div class="ring" id="giant-ring"></div>
+        <div class="face">🦍<small>KJEMPE</small></div>
+      </button>
+    </div>
+  </div>
+
+  <!-- Between rounds: upgrade shop -->
+  <div id="shop" class="screen hidden">
+    <div class="logo"><span class="l1">MOB</span><span class="l2">BLASTER</span></div>
+    <div class="shop-head">
+      <div class="pill level">NIVÅ <b id="shop-level">1</b></div>
+      <div class="pill coins big">🪙 <b id="shop-coins">0</b></div>
+    </div>
+    <div id="cards"></div>
+    <button id="btn-play" class="cta">SPILL NIVÅ <span id="play-level">1</span> ▶</button>
+  </div>
+
+  <!-- Round result -->
+  <div id="result" class="screen center hidden">
+    <div class="result-box">
+      <div id="result-title" class="result-title">SEIER!</div>
+      <div id="result-sub" class="result-sub"></div>
+      <div class="result-coins">🪙 +<b id="result-coins">0</b></div>
+      <button id="btn-continue" class="cta">FORTSETT</button>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause" class="screen center hidden">
+    <div class="result-box">
+      <div class="result-title small">PAUSE</div>
+      <button id="btn-resume" class="cta">FORTSETT</button>
+      <button id="btn-quit" class="cta secondary">GI OPP RUNDEN</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

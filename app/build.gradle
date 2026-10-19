@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application'
+}
+
+// CI sets GITHUB_RUN_NUMBER, so every build has a higher versionCode and
+// installs as an update over the previous one.
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
+
+android {
+    namespace 'com.gizmo6663.mobblaster'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.gizmo6663.mobblaster'
+        minSdk 26
+        targetSdk 34
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    // One fixed key for every build, so new APKs update the installed game
+    // instead of refusing with "app not installed". It only signs a hobby
+    // project; swap it for a secret keystore before publishing to a store.
+    signingConfigs {
+        shared {
+            storeFile file('mobblaster.keystore')
+            storePassword 'mobblaster'
+            keyAlias 'mobblaster'
+            keyPassword 'mobblaster'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+        debug {
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    // The game itself is the web/ folder, shipped as APK assets.
+    sourceSets {
+        main {
+            assets.srcDirs = ['../web']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A blue mob with a visor, on the 108dp adaptive icon canvas. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- shadow -->
+    <path android:fillColor="#33000000"
+        android:pathData="M30,80 a24,6 0 1,0 48,0 a24,6 0 1,0 -48,0z" />
+    <!-- body -->
+    <path android:fillColor="#1B1033"
+        android:pathData="M54,24 C70,24 77,38 77,54 L77,70 C77,80 69,84 54,84 C39,84 31,80 31,70 L31,54 C31,38 38,24 54,24z" />
+    <path android:fillColor="#2F7DFF"
+        android:pathData="M54,27 C68,27 74,40 74,54 L74,69 C74,78 67,81 54,81 C41,81 34,78 34,69 L34,54 C34,40 40,27 54,27z" />
+    <!-- highlight -->
+    <path android:fillColor="#6AA6FF"
+        android:pathData="M44,36 C47,31 52,30 55,31 C50,33 47,37 45,42z" />
+    <!-- visor -->
+    <path android:fillColor="#1B1033"
+        android:pathData="M38,48 C38,43 70,43 70,48 L70,55 C70,60 38,60 38,55z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M40,49 C40,46 68,46 68,49 L68,54 C68,57 40,57 40,54z" />
+</vector>

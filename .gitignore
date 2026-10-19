@@ -1,4 +1,9 @@
-.godot/
-export/
+# Android / Gradle
+.gradle/
 build/
-*.tmp
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+node_modules/
