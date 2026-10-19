@@ -70,7 +70,8 @@ kjempen.
 web/js/config.js     Alle tuning-tall. Start her når noe føles feil.
 web/js/progress.js   Nivå, mynter, oppgraderinger og lagring (localStorage).
 web/js/sim.js        Simuleringen av én runde. Kjenner verken DOM eller three.js.
-web/js/render.js     Three.js-scenen: bane, porter, baser, mober, partikler.
+web/js/render.js     Three.js-scenen: tegner verdenen hvert bilde, animerer mobene.
+web/js/models.js     Alle 3D-modeller og teksturer, bygget i kode (ingen asset-filer).
 web/js/main.js       Skjermer, input og hovedløkka.
 web/js/audio.js      Syntetiske lydeffekter.
 web/vendor/          three.js r169 (MIT).
@@ -78,8 +79,10 @@ app/                 Android-skallet: én WebView som laster web/ fra APK-en.
 tools/balance.mjs    Balansetest uten grafikk.
 ```
 
-Mobene tegnes med `InstancedMesh`, så hundrevis av enheter blir noen få
-draw calls. Porter med samme farge betyr samme multiplikator.
+Mobene er små figurer med armer, bein, øyne og hatt/hjelm som animeres
+hvert bilde. De tegnes med `InstancedMesh`, så hundrevis av enheter blir noen
+få draw calls, og statiske rekvisitter slås sammen til noen få store mesher.
+Oppløsningen senkes automatisk hvis telefonen ikke klarer 40 bilder i sekundet. Porter med samme farge betyr samme multiplikator.
 
 ## Balansetest
 

@@ -238,4 +238,4 @@ openShop();
 requestAnimationFrame(frame);
 
 // Console/test access: mob.world is the running round.
-window.mob = { get world() { return world; }, prog };
+window.mob = { get world() { return world; }, prog, renderer };
