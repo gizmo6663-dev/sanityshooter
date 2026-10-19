@@ -65,8 +65,56 @@ export class Batch {
   }
 }
 
+// Cel shading: three flat tones instead of smooth lighting, for a drawn look.
+let toonRamp = null;
+export function toonGradient() {
+  if (toonRamp) return toonRamp;
+  const data = new Uint8Array([70, 70, 70, 255, 160, 160, 160, 255, 255, 255, 255, 255]);
+  toonRamp = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+  toonRamp.needsUpdate = true;
+  return toonRamp;
+}
+
+/** Cel-shaded material. Accepts the usual options; PBR-only ones are dropped. */
+export function toon(opts = {}) {
+  const { roughness, metalness, flatShading, ...rest } = opts;
+  void roughness; void metalness; void flatShading;
+  return new THREE.MeshToonMaterial({ gradientMap: toonGradient(), ...rest });
+}
+
 export function vcMat(extra = {}) {
-  return new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.05, ...extra });
+  return toon({ vertexColors: true, ...extra });
+}
+
+// Ink outlines: a black copy of the mesh pushed out along its normals and
+// drawn from the inside (the "inverted hull" trick).
+const outlineCache = new Map();
+export function outlineMaterial(thickness = 0.025) {
+  const key = thickness.toFixed(3);
+  if (outlineCache.has(key)) return outlineCache.get(key);
+  const m = new THREE.MeshBasicMaterial({ color: 0x0a0605, side: THREE.BackSide });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>',
+      `#include <begin_vertex>\n  transformed += normalize(normal) * ${key};`);
+  };
+  m.userData.outline = true;
+  outlineCache.set(key, m);
+  return m;
+}
+
+/** Adds ink outlines to every opaque mesh under root. */
+export function addOutlines(root, thickness = 0.025) {
+  const meshes = [];
+  root.traverse((o) => {
+    if (o.isMesh && !o.isInstancedMesh && !o.material.transparent && !o.material.userData.outline && !o.userData.noOutline) meshes.push(o);
+  });
+  for (const m of meshes) {
+    const ol = new THREE.Mesh(m.geometry, outlineMaterial(thickness));
+    ol.userData.noOutline = true;
+    m.add(ol);
+  }
+  return root;
 }
 
 export function canvasTex(w, h, draw, repeatX = 1, repeatY = 1) {

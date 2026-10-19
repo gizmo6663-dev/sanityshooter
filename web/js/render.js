@@ -4,6 +4,7 @@
 
 import * as THREE from 'three';
 import { Cfg } from './config.js';
+import { outlineMaterial, toon, addOutlines } from './gfx.js';
 import {
   buildHero, buildEnemy, buildRoom, buildDoorLeaf, buildPedestal, buildTrapdoor,
   heartGeometry, iconTexture, glowTexture, bloodTexture,
@@ -22,8 +23,8 @@ const tmpC2 = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
 
 const FX_COL = { fire: new THREE.Color(0xff7a2a), ice: new THREE.Color(0x8fdcff), poison: new THREE.Color(0x8fd04a) };
-const SOUL = new THREE.Color(0xcfe8ff);
-const BLOOD = { fly: 0x3a2a10, grub: 0x8a7a3a, slime: 0x4a6a1a, eye: 0x6a0808, ram: 0x8a8070, bloat: 0x5a0606 };
+const SOUL = new THREE.Color(0x8fc8ff);
+const BLOOD = { fly: 0xb02020, grub: 0xc8b070, slime: 0x6a9a2a, eye: 0xc02020, ram: 0xb0a890, bloat: 0xb01818 };
 
 function shotColor(fx, out) {
   let n = 0;
@@ -58,7 +59,7 @@ export class Renderer {
     this.scene.background = new THREE.Color(0x040303);
     this.scene.fog = new THREE.Fog(0x040303, 26, 50);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 200);
-    this.camOffset = new THREE.Vector3(0, 17, 6.2);
+    this.camOffset = new THREE.Vector3(0, 19.5, 4.2);
     this.camPos = new THREE.Vector3();
 
     this.buildLights();
@@ -93,9 +94,9 @@ export class Renderer {
   }
 
   buildLights() {
-    this.scene.add(new THREE.AmbientLight(0x5a5a78, 1.1));
-    this.scene.add(new THREE.HemisphereLight(0x8c9cc0, 0x2a1810, 0.9));
-    const moon = new THREE.DirectionalLight(0xb0c0e8, 1.3);
+    this.scene.add(new THREE.AmbientLight(0x6a5448, 1.0));
+    this.scene.add(new THREE.HemisphereLight(0xc0a890, 0x2a1810, 0.6));
+    const moon = new THREE.DirectionalLight(0xffe0c0, 1.15);
     moon.castShadow = true;
     moon.shadow.mapSize.set(1024, 1024);
     const sc = moon.shadow.camera;
@@ -105,7 +106,7 @@ export class Renderer {
     this.scene.add(moon, moon.target);
     this.moon = moon;
     // The hero's lantern
-    this.lantern = new THREE.PointLight(0xffb070, 18, 11, 1.5);
+    this.lantern = new THREE.PointLight(0xffc890, 12, 9, 1.6);
     this.scene.add(this.lantern);
     // Two candle lights, moved to the current room's candles
     this.candleLights = [0, 1].map(() => {
@@ -118,10 +119,12 @@ export class Renderer {
   buildDynamic() {
     const add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
     // player shots: bright core + soft glow
-    this.shotCore = instanced(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial(), 300, true);
-    this.shotGlow = instanced(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ ...add, opacity: 0.35 }), 300, true);
+    this.shotCore = instanced(new THREE.SphereGeometry(1, 12, 10), new THREE.MeshBasicMaterial(), 300, true);
+    this.shotGlow = instanced(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ ...add, opacity: 0.18 }), 300, true);
+    this.shotInk = instanced(new THREE.SphereGeometry(1, 12, 10), outlineMaterial(0.28), 300);
     // enemy shots: dark blood with a red halo
-    this.eshotCore = instanced(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.2, emissive: 0x3a0000 }), 200);
+    this.eshotCore = instanced(new THREE.SphereGeometry(1, 12, 10), new THREE.MeshBasicMaterial({ color: 0xa8141c }), 200);
+    this.eshotInk = instanced(new THREE.SphereGeometry(1, 12, 10), outlineMaterial(0.28), 200);
     this.eshotGlow = instanced(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a, ...add, opacity: 0.3 }), 200);
     // xp orbs
     this.orbMesh = instanced(new THREE.OctahedronGeometry(0.09), new THREE.MeshBasicMaterial({ color: 0x7affc8 }), 200);
@@ -142,13 +145,13 @@ export class Renderer {
     this.flameGlow = instanced(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff7a1a, ...add, opacity: 0.18 }), 64);
     // shadow blob under flying things
     this.blobMesh = instanced(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }), 64);
-    for (const im of [this.shotCore, this.shotGlow, this.eshotCore, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow,
+    for (const im of [this.shotCore, this.shotGlow, this.shotInk, this.eshotInk, this.eshotCore, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow,
       this.partMesh, this.ringMesh, this.flashMesh, this.cloudMesh, this.flameMesh, this.flameGlow, this.blobMesh]) this.scene.add(im);
 
     this.heartGeo = heartGeometry();
-    this.heartMat = new THREE.MeshStandardMaterial({ color: 0xa8141c, roughness: 0.3, emissive: 0x300000 });
+    this.heartMat = toon({ color: 0xc8202a, emissive: 0x300000 });
     this.coinGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.04, 14).rotateX(Math.PI / 2);
-    this.coinMat = new THREE.MeshStandardMaterial({ color: 0xc89a3a, roughness: 0.3, metalness: 0.8, emissive: 0x2a1a00 });
+    this.coinMat = toon({ color: 0xe0b040, emissive: 0x3a2400 });
     this.decalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     this.decalMats = {};
   }
@@ -289,8 +292,8 @@ export class Renderer {
     this.camPos.set(tx, 0, tz);
     const sh = w.shake * 0.04;
     this.camera.position.set(tx + this.camOffset.x + (Math.random() - 0.5) * sh, this.camOffset.y + (Math.random() - 0.5) * sh, tz + this.camOffset.z);
-    this.camera.lookAt(tx, 0, tz + 0.4);
-    this.moon.position.set(tx - 6, 18, tz + 6);
+    this.camera.lookAt(tx, 0, tz + 0.2);
+    this.moon.position.set(tx - 3, 18, tz + 4);
     this.moon.target.position.set(tx, 0, tz);
     // candles
     let n = 0;
@@ -324,6 +327,7 @@ export class Renderer {
     const cur = h.root.rotation.y;
     const diff = ((yaw - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     h.root.rotation.y = cur + diff * Math.min(1, dt * 14);
+    h.root.rotation.x = 0.85;
     h.body.rotation.x = moving ? 0.12 : 0;
     const dash = p.dashT > 0;
     h.body.scale.set(dash ? 0.85 : 1, dash ? 0.85 : 1, dash ? 1.3 : 1);
@@ -332,7 +336,7 @@ export class Renderer {
     h.flame.scale.setScalar(fl);
     h.lantern.getWorldPosition(tmpP);
     this.lantern.position.set(tmpP.x, tmpP.y + 0.3, tmpP.z);
-    this.lantern.intensity = 18 * fl;
+    this.lantern.intensity = 12 * fl;
     if (dash && Math.random() < 0.6) this.burst(ox + p.x, oz - p.z, 0x1a1418, 2, 0.3, 0.6);
   }
 
@@ -362,6 +366,7 @@ export class Renderer {
       let yaw = Math.atan2(p.x - e.x, p.z - e.z);
       if ((e.type === 'ram' || e.type === 'grub') && e.face !== undefined) yaw = Math.atan2(Math.cos(e.face), Math.sin(e.face));
       m.root.rotation.y = yaw;
+      m.root.rotation.x = e.boss ? 0.55 : e.type === 'fly' || e.type === 'grub' ? 0.3 : 0.75;
       // per-type animation
       if (e.type === 'fly') {
         m.body.position.y = 0.9 + Math.sin(t * 6) * 0.08;
@@ -420,19 +425,22 @@ export class Renderer {
       tmpM.compose(tmpP, tmpQ, tmpS.setScalar(r * 2.6));
       this.shotGlow.setMatrixAt(i, tmpM);
       this.shotGlow.setColorAt(i, tmpC);
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(r));
+      this.shotInk.setMatrixAt(i, tmpM);
       i++;
     }
-    this.shotCore.count = this.shotGlow.count = i;
+    this.shotCore.count = this.shotGlow.count = this.shotInk.count = i;
     i = 0;
     for (const b of w.eshots) {
       if (i >= 200) break;
       tmpM.compose(tmpP.set(ox + b.x, 0.55, oz - b.z), tmpQ.identity(), tmpS.setScalar(b.r));
       this.eshotCore.setMatrixAt(i, tmpM);
+      this.eshotInk.setMatrixAt(i, tmpM);
       tmpM.compose(tmpP, tmpQ, tmpS.setScalar(b.r * 2.4));
       this.eshotGlow.setMatrixAt(i, tmpM);
       i++;
     }
-    this.eshotCore.count = this.eshotGlow.count = i;
+    this.eshotCore.count = this.eshotGlow.count = this.eshotInk.count = i;
     i = 0;
     for (const o of w.orbs) {
       if (i >= 200) break;
@@ -454,7 +462,7 @@ export class Renderer {
       i++;
     }
     this.wispMesh.count = this.wispGlow.count = i;
-    for (const im of [this.shotCore, this.shotGlow, this.eshotCore, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow]) {
+    for (const im of [this.shotCore, this.shotGlow, this.shotInk, this.eshotCore, this.eshotInk, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow]) {
       im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
@@ -496,12 +504,12 @@ export class Renderer {
     if (it.kind === 'coin') {
       const c = new THREE.Mesh(this.coinGeo, this.coinMat);
       c.castShadow = true;
-      g.add(c);
+      g.add(addOutlines(c, 0.02));
     } else if (it.kind === 'heart') {
       const h = new THREE.Mesh(this.heartGeo, this.heartMat);
       h.castShadow = true;
       h.scale.setScalar(1.3);
-      g.add(h);
+      g.add(addOutlines(h, 0.02));
     } else if (it.kind === 'item') {
       g.add(buildPedestal());
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffe0a0, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));

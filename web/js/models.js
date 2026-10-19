@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { Cfg } from './config.js';
-import { mat, mergeGeos, Batch, vcMat, canvasTex, seeded } from './gfx.js';
+import { mat, mergeGeos, Batch, vcMat, canvasTex, seeded, toon, addOutlines } from './gfx.js';
 import { tileIndex, tileX, tileZ } from './dungeon.js';
 
 const PI = Math.PI;
@@ -23,71 +23,98 @@ export const floorTexture = (() => {
   let cache = null;
   return () => cache || (cache = canvasTex(512, 512, (g, w, h) => {
     const rnd = seeded(31);
-    g.fillStyle = '#2a2622';
+    // dark mortar between warm brown flagstones, like an old cellar
+    g.fillStyle = '#2b1d14';
     g.fillRect(0, 0, w, h);
-    const n = 4, s = w / n;
+    const n = 3, s = w / n;
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
-        const v = 52 + rnd() * 22;
-        g.fillStyle = `rgb(${v},${v * 0.92},${v * 0.84})`;
-        g.fillRect(i * s + 3, j * s + 3, s - 6, s - 6);
-        // worn edges
-        g.fillStyle = 'rgba(0,0,0,0.25)';
-        g.fillRect(i * s + 3, j * s + s - 12, s - 6, 9);
-        g.fillStyle = 'rgba(255,240,220,0.05)';
-        g.fillRect(i * s + 3, j * s + 3, s - 6, 6);
+        const v = 66 + rnd() * 26;
+        const x = i * s + 4 + rnd() * 3, y = j * s + 4 + rnd() * 3, sw = s - 9 - rnd() * 4, sh = s - 9 - rnd() * 4;
+        g.fillStyle = `rgb(${v},${v * 0.8},${v * 0.64})`;
+        g.beginPath();
+        g.moveTo(x + 10, y); g.lineTo(x + sw - 8, y + 2); g.lineTo(x + sw, y + 12); g.lineTo(x + sw - 2, y + sh - 9);
+        g.lineTo(x + sw - 12, y + sh); g.lineTo(x + 8, y + sh - 2); g.lineTo(x, y + sh - 12); g.lineTo(x + 2, y + 9);
+        g.closePath();
+        g.fill();
+        // soft shading inside each stone
+        const grad = g.createLinearGradient(x, y, x, y + sh);
+        grad.addColorStop(0, 'rgba(255,230,190,0.10)');
+        grad.addColorStop(1, 'rgba(30,15,5,0.25)');
+        g.fillStyle = grad;
+        g.fill();
+        g.strokeStyle = 'rgba(20,10,5,0.55)';
+        g.lineWidth = 3;
+        g.stroke();
       }
     }
-    noise(g, w, h, 9000, 0.08, rnd);
-    // cracks
-    g.strokeStyle = 'rgba(10,8,6,0.6)';
+    noise(g, w, h, 12000, 0.1, rnd);
+    noise(g, w, h, 600, 0.18, rnd, 5);
+    g.strokeStyle = 'rgba(25,12,6,0.55)';
     g.lineWidth = 2;
-    for (let k = 0; k < 9; k++) {
+    for (let k = 0; k < 8; k++) {
       let x = rnd() * w, y = rnd() * h;
       g.beginPath(); g.moveTo(x, y);
-      for (let s2 = 0; s2 < 5; s2++) { x += (rnd() - 0.5) * 50; y += (rnd() - 0.5) * 50; g.lineTo(x, y); }
+      for (let s2 = 0; s2 < 4; s2++) { x += (rnd() - 0.5) * 40; y += (rnd() - 0.5) * 40; g.lineTo(x, y); }
       g.stroke();
     }
-    // grime blotches
-    for (let k = 0; k < 14; k++) {
-      const x = rnd() * w, y = rnd() * h, r = 20 + rnd() * 60;
+    for (let k = 0; k < 10; k++) {
+      const x = rnd() * w, y = rnd() * h, r = 20 + rnd() * 50;
       const grad = g.createRadialGradient(x, y, 0, x, y, r);
-      grad.addColorStop(0, 'rgba(15,12,8,0.35)');
-      grad.addColorStop(1, 'rgba(15,12,8,0)');
+      grad.addColorStop(0, 'rgba(25,12,5,0.45)');
+      grad.addColorStop(1, 'rgba(40,20,8,0)');
       g.fillStyle = grad;
       g.fillRect(x - r, y - r, r * 2, r * 2);
     }
-  }, Cfg.ROOM_W / 4, Cfg.ROOM_D / 4));
+  }, Cfg.ROOM_W / 3, Cfg.ROOM_D / 3));
 })();
 
 export const wallTexture = (() => {
   let cache = null;
   return () => cache || (cache = canvasTex(256, 256, (g, w, h) => {
     const rnd = seeded(77);
-    g.fillStyle = '#14110f';
+    // rough rounded stones set in dark earth
+    g.fillStyle = '#1e140e';
     g.fillRect(0, 0, w, h);
-    const rows = 8, cols = 4, bh = h / rows, bw = w / cols;
-    for (let r = 0; r < rows; r++) {
-      for (let k = -1; k < cols; k++) {
-        const x = k * bw + (r % 2 ? bw / 2 : 0);
-        const v = 40 + rnd() * 26;
-        g.fillStyle = `rgb(${v * 1.05},${v * 0.9},${v * 0.8})`;
-        g.fillRect(x + 2, r * bh + 2, bw - 4, bh - 4);
-        g.fillStyle = 'rgba(0,0,0,0.3)';
-        g.fillRect(x + 2, r * bh + bh - 7, bw - 4, 5);
-      }
+    for (let k = 0; k < 70; k++) {
+      const x = rnd() * w, y = rnd() * h, rx = 14 + rnd() * 18, ry = 10 + rnd() * 12;
+      const v = 62 + rnd() * 30;
+      g.fillStyle = `rgb(${v},${v * 0.74},${v * 0.55})`;
+      g.beginPath();
+      g.ellipse(x, y, rx, ry, rnd() * PI, 0, PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(15,8,4,0.7)';
+      g.lineWidth = 3;
+      g.stroke();
+      g.fillStyle = 'rgba(255,220,180,0.08)';
+      g.beginPath();
+      g.ellipse(x - rx * 0.2, y - ry * 0.3, rx * 0.5, ry * 0.4, 0, 0, PI * 2);
+      g.fill();
     }
-    noise(g, w, h, 4000, 0.1, rnd);
-    // damp streaks
-    for (let k = 0; k < 6; k++) {
-      const x = rnd() * w;
-      const grad = g.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, 'rgba(20,30,15,0.35)');
-      grad.addColorStop(1, 'rgba(20,30,15,0)');
-      g.fillStyle = grad;
-      g.fillRect(x, 0, 6 + rnd() * 10, h * (0.4 + rnd() * 0.6));
-    }
+    noise(g, w, h, 3000, 0.08, rnd);
   }, 3, 1));
+})();
+
+/** Darkens the floor towards the walls, the way Isaac's rooms fall into shadow. */
+export const edgeShadowTexture = (() => {
+  let cache = null;
+  return () => cache || (cache = canvasTex(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    const band = 90;
+    const sides = [
+      [0, 0, w, band, 0, 0, 0, band],
+      [0, h - band, w, band, 0, h, 0, h - band],
+      [0, 0, band, h, 0, 0, band, 0],
+      [w - band, 0, band, h, w, 0, w - band, 0],
+    ];
+    for (const [x, y, sw, sh, x0, y0, x1, y1] of sides) {
+      const grad = g.createLinearGradient(x0, y0, x1, y1);
+      grad.addColorStop(0, 'rgba(0,0,0,0.85)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = grad;
+      g.fillRect(x, y, sw, sh);
+    }
+  }));
 })();
 
 export const bloodTexture = (() => {
@@ -95,7 +122,7 @@ export const bloodTexture = (() => {
   return () => cache || (cache = canvasTex(128, 128, (g, w, h) => {
     const rnd = seeded(5);
     g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(90,8,10,0.85)';
+    g.fillStyle = 'rgba(130,10,12,0.9)';
     for (let k = 0; k < 9; k++) {
       const r = 10 + rnd() * 24;
       g.beginPath();
@@ -150,54 +177,57 @@ export function glowTexture() {
 }
 
 // --- Hero --------------------------------------------------------------------
-// A small hooded wanderer with glowing eyes and a lantern. Faces +Z.
+// A small hooded wanderer: big head, pale face, large dark eyes, a lantern.
+// Faces +Z.
 export function buildHero() {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
   const b = new Batch();
-  const CLOAK = 0x3b342d, CLOAK_D = 0x2a241f, ROPE = 0x6b5a3e;
+  const CLOAK = 0x4a3a2e, CLOAK_D = 0x33281f, SKIN = 0xe8d5c2, ROPE = 0x7a6040;
+  // small body
   b.add(new THREE.LatheGeometry([
-    new THREE.Vector2(0.0, 0.02), new THREE.Vector2(0.33, 0.02), new THREE.Vector2(0.3, 0.2),
-    new THREE.Vector2(0.24, 0.42), new THREE.Vector2(0.17, 0.56), new THREE.Vector2(0.0, 0.6),
+    new THREE.Vector2(0.0, 0.02), new THREE.Vector2(0.24, 0.02), new THREE.Vector2(0.22, 0.14),
+    new THREE.Vector2(0.17, 0.3), new THREE.Vector2(0.12, 0.42), new THREE.Vector2(0.0, 0.44),
   ], 14), CLOAK);
-  // ragged hem
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * PI * 2;
-    b.add(new THREE.ConeGeometry(0.07, 0.14, 4), CLOAK_D, mat(Math.sin(a) * 0.31, 0.02, Math.cos(a) * 0.31, PI, a, 0));
+  for (let k = 0; k < 8; k++) {
+    const a = (k / 8) * PI * 2;
+    b.add(new THREE.ConeGeometry(0.06, 0.1, 4), CLOAK_D, mat(Math.sin(a) * 0.23, 0.02, Math.cos(a) * 0.23, PI, a, 0));
   }
-  b.add(new THREE.TorusGeometry(0.24, 0.025, 4, 16), ROPE, mat(0, 0.36, 0, PI / 2));
-  // hood
-  b.add(new THREE.SphereGeometry(0.23, 14, 10), CLOAK, mat(0, 0.74, -0.02, 0, 0, 0, 1, 1.05, 1.05));
-  b.add(new THREE.ConeGeometry(0.12, 0.25, 8), CLOAK, mat(0, 0.9, -0.12, -0.9, 0, 0));
-  b.add(new THREE.SphereGeometry(0.16, 12, 8), 0x050405, mat(0, 0.72, 0.1, 0, 0, 0, 1, 1.05, 0.7));
-  // sleeves and pale hands
+  b.add(new THREE.TorusGeometry(0.18, 0.02, 4, 14), ROPE, mat(0, 0.24, 0, PI / 2));
+  // big head: pale face inside a hood
+  b.add(new THREE.SphereGeometry(0.3, 18, 14), SKIN, mat(0, 0.72, 0.02));
+  b.add(new THREE.SphereGeometry(0.335, 18, 14, 0, PI * 2, 0, PI * 0.62), CLOAK, mat(0, 0.75, -0.05, -0.5, 0, 0));
+  b.add(new THREE.TorusGeometry(0.28, 0.05, 6, 20, PI * 1.25), CLOAK_D, mat(0, 0.73, 0.12, 0, 0, -PI * 0.125 + PI));
+  b.add(new THREE.ConeGeometry(0.12, 0.3, 8), CLOAK, mat(0, 1.0, -0.22, -1.0, 0, 0));
+  // face
   for (const sx of [-1, 1]) {
-    b.add(new THREE.CylinderGeometry(0.06, 0.08, 0.28, 6), CLOAK_D, mat(sx * 0.22, 0.4, 0.06, 0.5, 0, sx * 0.35));
-    b.add(new THREE.SphereGeometry(0.05, 6, 4), 0xc9bfae, mat(sx * 0.27, 0.27, 0.13));
+    b.add(new THREE.SphereGeometry(0.075, 12, 10), 0x0d0808, mat(sx * 0.11, 0.73, 0.27, 0, sx * 0.3, 0, 1, 1.25, 0.55));
+    b.add(new THREE.SphereGeometry(0.022, 6, 4), 0xffffff, mat(sx * 0.11 + 0.02, 0.77, 0.315));
+    b.add(new THREE.SphereGeometry(0.035, 6, 4), 0xd8a8a0, mat(sx * 0.17, 0.64, 0.24, 0, 0, 0, 1, 0.6, 0.4));
   }
-  const cloak = b.build(vcMat({ roughness: 0.9 }));
+  b.add(new THREE.TorusGeometry(0.04, 0.01, 4, 8, PI), 0x3a1a14, mat(0, 0.6, 0.29, 0, 0, 0));
+  // little arms
+  for (const sx of [-1, 1]) {
+    b.add(new THREE.CylinderGeometry(0.045, 0.06, 0.2, 6), CLOAK_D, mat(sx * 0.17, 0.3, 0.05, 0.4, 0, sx * 0.4));
+    b.add(new THREE.SphereGeometry(0.045, 6, 4), SKIN, mat(sx * 0.22, 0.21, 0.1));
+  }
+  const cloak = b.build(vcMat());
   body.add(cloak);
 
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xbfe8ff });
-  for (const sx of [-1, 1]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), eyeMat);
-    e.position.set(sx * 0.06, 0.74, 0.2);
-    e.scale.set(1, 0.7, 1);
-    body.add(e);
-  }
-  // lantern in the right hand
   const lantern = new THREE.Group();
   const lb = new Batch();
   lb.add(new THREE.BoxGeometry(0.1, 0.13, 0.1), 0x2a2420, mat(0, 0, 0));
   lb.add(new THREE.ConeGeometry(0.08, 0.06, 4), 0x2a2420, mat(0, 0.09, 0, 0, PI / 4, 0));
   lb.add(new THREE.TorusGeometry(0.035, 0.008, 4, 8), 0x2a2420, mat(0, 0.14, 0));
-  lantern.add(lb.build(vcMat({ metalness: 0.6, roughness: 0.4 })));
+  lantern.add(lb.build(vcMat()));
   const flame = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.09, 0.07), new THREE.MeshBasicMaterial({ color: 0xffc070 }));
+  flame.userData.noOutline = true;
   lantern.add(flame);
-  lantern.position.set(0.3, 0.2, 0.16);
+  lantern.position.set(0.26, 0.16, 0.14);
   body.add(lantern);
-  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  addOutlines(root, 0.022);
+  root.traverse((o) => { if (o.isMesh && !o.material.userData.outline) o.castShadow = true; });
   return { root, body, lantern, flame };
 }
 
@@ -217,7 +247,7 @@ const ENEMY_BUILDERS = {
       for (let l = 0; l < 3; l++) b.add(new THREE.CylinderGeometry(0.008, 0.008, 0.18, 3), 0x111111, mat(sx * 0.08, -0.12, -l * 0.07, 0, 0, sx * 0.5));
     }
     body.add(b.build(vcMat({ roughness: 0.35, metalness: 0.2 })));
-    const wingMat = new THREE.MeshStandardMaterial({ color: 0xc8d0c0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
+    const wingMat = toon({ color: 0xc8d0c0, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false });
     const wings = [];
     for (const sx of [-1, 1]) {
       const g = new THREE.CircleGeometry(0.17, 10);
@@ -256,7 +286,7 @@ const ENEMY_BUILDERS = {
     const root = new THREE.Group(), body = new THREE.Group();
     root.add(body);
     const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14),
-      new THREE.MeshStandardMaterial({ map: veinTexture('#d9cfc0', 'rgba(140,20,20,0.75)'), roughness: 0.3 }));
+      toon({ map: veinTexture('#d9cfc0', 'rgba(140,20,20,0.75)'), color: 0xd8c8b8 }));
     sclera.castShadow = true;
     body.add(sclera);
     const b = new Batch();
@@ -265,7 +295,7 @@ const ENEMY_BUILDERS = {
     b.add(new THREE.SphereGeometry(0.025, 6, 4), 0xffffff, mat(0.04, 0.04, 0.3));
     b.add(new THREE.ConeGeometry(0.08, 0.5, 8), 0x6a1414, mat(0, -0.05, -0.42, -PI / 2 - 0.3, 0, 0));
     body.add(b.build(vcMat({ roughness: 0.25 })));
-    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.31, 16, 8, 0, PI * 2, 0, PI / 2), new THREE.MeshStandardMaterial({ color: 0x6e4a40, roughness: 0.6 }));
+    const lid = new THREE.Mesh(new THREE.SphereGeometry(0.31, 16, 8, 0, PI * 2, 0, PI / 2), toon({ color: 0x6e4a40, roughness: 0.6 }));
     lid.rotation.x = -PI / 2;
     lid.scale.set(1, 1, 0.02);
     body.add(lid);
@@ -303,7 +333,7 @@ const ENEMY_BUILDERS = {
     const root = new THREE.Group(), body = new THREE.Group();
     root.add(body);
     const jelly = new THREE.Mesh(new THREE.SphereGeometry(0.4, 18, 12, 0, PI * 2, 0, PI * 0.62),
-      new THREE.MeshStandardMaterial({ color: 0x55702a, roughness: 0.15, transparent: true, opacity: 0.78, emissive: 0x1a2a05, emissiveIntensity: 0.5 }));
+      toon({ color: 0x55702a, roughness: 0.15, transparent: true, opacity: 0.78, emissive: 0x1a2a05, emissiveIntensity: 0.5 }));
     jelly.position.y = 0.0;
     jelly.scale.set(1, 1.1, 1);
     jelly.castShadow = true;
@@ -322,7 +352,7 @@ const ENEMY_BUILDERS = {
     const root = new THREE.Group(), body = new THREE.Group();
     root.add(body);
     const flesh = new THREE.Mesh(new THREE.SphereGeometry(1.15, 28, 20),
-      new THREE.MeshStandardMaterial({ map: veinTexture('#7a4c46', 'rgba(60,10,20,0.7)'), roughness: 0.55 }));
+      toon({ map: veinTexture('#7a4c46', 'rgba(60,10,20,0.7)'), color: 0xa07070 }));
     flesh.position.y = 1.0;
     flesh.scale.set(1, 0.92, 1);
     flesh.castShadow = true;
@@ -332,7 +362,7 @@ const ENEMY_BUILDERS = {
     // tumours
     for (let k = 0; k < 9; k++) {
       const a = rnd() * PI * 2, h = 0.6 + rnd() * 0.9;
-      b.add(new THREE.SphereGeometry(0.18 + rnd() * 0.2, 10, 8), 0x8a5650, mat(Math.cos(a) * 1.0, h, Math.sin(a) * 1.0));
+      b.add(new THREE.SphereGeometry(0.18 + rnd() * 0.2, 10, 8), 0x6a3a36, mat(Math.cos(a) * 1.0, h, Math.sin(a) * 1.0));
     }
     // eyes, mostly towards the front
     for (let k = 0; k < 6; k++) {
@@ -358,8 +388,9 @@ const ENEMY_BUILDERS = {
 
 export function buildEnemy(type) {
   const m = ENEMY_BUILDERS[type]();
+  addOutlines(m.root, type === 'bloat' ? 0.03 : 0.02);
   m.root.traverse((o) => {
-    if (o.isMesh && o.material && o.material.emissive !== undefined && !o.material.userData.shared) {
+    if (o.isMesh && o.material && o.material.emissive !== undefined && !o.material.userData.outline) {
       // per-enemy material copy so hit flashes / status tints stay local
       o.material = o.material.clone();
     }
@@ -385,7 +416,7 @@ export function buildPedestal() {
   b.add(new THREE.CylinderGeometry(0.38, 0.45, 0.16, 12), 0x3a3631, mat(0, 0.08, 0));
   b.add(new THREE.CylinderGeometry(0.26, 0.3, 0.5, 12), 0x4a453e, mat(0, 0.4, 0));
   b.add(new THREE.CylinderGeometry(0.36, 0.3, 0.12, 12), 0x3a3631, mat(0, 0.7, 0));
-  return b.build(vcMat({ roughness: 0.85 }));
+  return addOutlines(b.build(vcMat()), 0.02);
 }
 
 export function buildTrapdoor() {
@@ -403,22 +434,27 @@ export function buildTrapdoor() {
 
 // --- Rooms ----------------------------------------------------------------------
 const W = Cfg.ROOM_W, D = Cfg.ROOM_D, HW = W / 2, HD = D / 2;
-const WALL_H = 1.5, WALL_T = 1.0;
+const WALL_H = 2.2, WALL_T = 1.0;
 
 /** Builds the static meshes of one room. Returns { group, doors, candles }. */
 export function buildRoom(room, floor) {
   const group = new THREE.Group();
   const rnd = seeded(room.key * 131 + floor * 977 + 3);
-  const tint = [0xffffff, 0xd8e0ff, 0xffd8c8, 0xffc8c8][floor % 4];
+  const tint = [0xffffff, 0xd8d8e8, 0xe8d0c0, 0xe8b8b0][floor % 4];
 
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorTexture(), roughness: 0.92, color: tint });
+  const floorMat = toon({ map: floorTexture(), roughness: 0.92, color: tint });
   const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(W, D), floorMat);
   floorMesh.rotation.x = -PI / 2;
   floorMesh.receiveShadow = true;
   group.add(floorMesh);
+  const edge = new THREE.Mesh(new THREE.PlaneGeometry(W, D), new THREE.MeshBasicMaterial({ map: edgeShadowTexture(), transparent: true, depthWrite: false }));
+  edge.rotation.x = -PI / 2;
+  edge.position.y = 0.02;
+  edge.renderOrder = 1;
+  group.add(edge);
 
   // Walls with door gaps; textured boxes
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTexture(), roughness: 0.9, color: tint });
+  const wallMat = toon({ map: wallTexture(), roughness: 0.9, color: tint });
   const addWall = (x, z, w, d) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, WALL_H, d), wallMat);
     m.position.set(x, WALL_H / 2, -z);
@@ -446,7 +482,7 @@ export function buildRoom(room, floor) {
   const st = new Batch();
   // dark cap along the wall tops and corner pillars
   for (const [x, z, w, d] of [[0, HD + WALL_T / 2, W + 2, WALL_T + 0.1], [0, -HD - WALL_T / 2, W + 2, WALL_T + 0.1], [HW + WALL_T / 2, 0, WALL_T + 0.1, D], [-HW - WALL_T / 2, 0, WALL_T + 0.1, D]]) {
-    st.add(new THREE.BoxGeometry(w, 0.1, d), 0x4a423a, mat(x, WALL_H + 0.05, -z));
+    st.add(new THREE.BoxGeometry(w, 0.1, d), 0x1a120c, mat(x, WALL_H + 0.05, -z));
   }
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     st.add(new THREE.BoxGeometry(0.5, WALL_H + 0.3, 0.5), 0x4a423a, mat(sx * (HW + 0.1), (WALL_H + 0.3) / 2, -sz * (HD + 0.1)));
@@ -465,25 +501,28 @@ export function buildRoom(room, floor) {
     const px = vertical ? 0 : sign * (HW + 0.05);
     const pz = vertical ? sign * (HD + 0.05) : 0;
     const ry = vertical ? 0 : PI / 2;
-    const frameCol = room.type === 'boss' ? 0x6a2020 : 0x5e554c;
+    const frameCol = room.type === 'boss' ? 0x6a2020 : 0x4a3a2c;
     const m = (lx, ly, lz, rx = 0, rz = 0) => new THREE.Matrix4().makeTranslation(px, 0, -pz).multiply(mat(0, 0, 0, 0, ry, 0)).multiply(mat(lx, ly, lz, rx, 0, rz));
     for (const s of [-1, 1]) st.add(new THREE.BoxGeometry(0.28, 1.5, 1.15), frameCol, m(s * (g + 0.1), 0.75, 0));
     st.add(new THREE.BoxGeometry(g * 2 + 0.5, 0.3, 1.15), frameCol, m(0, 1.5, 0));
+    st.add(new THREE.BoxGeometry(g * 2 + 0.6, WALL_H - 1.5, 1.0), 0x2a1d14, m(0, (WALL_H + 1.5) / 2, 0));
     st.add(new THREE.BoxGeometry(0.3, 0.42, 1.2), room.type === 'boss' ? 0x8a2a2a : 0x6e655a, m(0, 1.62, 0));
     st.add(new THREE.BoxGeometry(g * 2, 0.02, 1.0), 0x0a0807, m(0, 0.005, 0));
     doors[dir] = { px, pz, ry };
   }
 
-  // Rocks
+  // Rocks (own mesh so they get ink outlines)
+  const rocks = new Batch();
   for (let j = 0; j < D; j++) {
     for (let i = 0; i < W; i++) {
       if (room.tiles[tileIndex(i, j)] !== 1) continue;
       const x = tileX(i), z = tileZ(j);
-      const c = [0x45403a, 0x3a3631, 0x504a42][Math.floor(rnd() * 3)];
-      st.add(new THREE.DodecahedronGeometry(0.5, 0), c, mat(x, 0.32, -z, rnd(), rnd() * PI, rnd(), 0.95, 0.75, 0.95));
-      st.add(new THREE.DodecahedronGeometry(0.22, 0), c, mat(x + (rnd() - 0.5) * 0.5, 0.12, -z + (rnd() - 0.5) * 0.5, rnd(), rnd(), 0));
+      const c = [0x4a4440, 0x403a36, 0x524a44][Math.floor(rnd() * 3)];
+      rocks.add(new THREE.DodecahedronGeometry(0.5, 0), c, mat(x, 0.3, -z, rnd(), rnd() * PI, rnd(), 0.95, 0.7, 0.95));
+      rocks.add(new THREE.IcosahedronGeometry(0.2, 0), c, mat(x + (rnd() - 0.5) * 0.5, 0.12, -z + (rnd() - 0.5) * 0.5, rnd(), rnd(), 0));
     }
   }
+  if (rocks.parts.length) group.add(addOutlines(rocks.build(vcMat()), 0.03));
 
   // Bones and skulls scattered about
   const freeTile = () => {

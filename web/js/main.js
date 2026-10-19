@@ -37,15 +37,11 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerId !== input.stick) return;
+  // The stick stays where the finger first landed; the knob stops at the
+  // rim, but the direction keeps following the finger.
   let dx = e.clientX - input.ox, dy = e.clientY - input.oy;
   const d = Math.hypot(dx, dy);
-  if (d > STICK_R) {
-    // the stick follows the finger, so you never run out of room
-    input.ox += (dx / d) * (d - STICK_R); input.oy += (dy / d) * (d - STICK_R);
-    dx = e.clientX - input.ox; dy = e.clientY - input.oy;
-    $('stick').style.left = `${input.ox}px`;
-    $('stick').style.top = `${input.oy}px`;
-  }
+  if (d > STICK_R) { dx = (dx / d) * STICK_R; dy = (dy / d) * STICK_R; }
   input.mx = dx / STICK_R;
   input.mz = -dy / STICK_R;
   $('knob').style.transform = `translate(${dx}px,${dy}px)`;
