@@ -1,0 +1,133 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dypet – pikselskisser</title>
+<style>html,body{margin:0;background:#0d0806;overflow:hidden}canvas{display:block;image-rendering:pixelated}</style></head>
+<body><canvas id="c"></canvas>
+<script type="module">
+// Pixel-art mockups: ?style=room | dark | sheet
+import * as S from './js/sprites.js';
+import { drawRoom } from './js/roomart.js';
+import { pixelSprite, quantize, light, grime, outline } from './js/pixel.js';
+
+const style = new URLSearchParams(location.search).get('style') || 'room';
+const VW = 206, VH = 435, SCALE = 4;           // virtual pixels, upscaled 4x
+const out = document.getElementById('c');
+out.width = VW * SCALE; out.height = VH * SCALE;
+out.style.width = (VW * SCALE / 2) + 'px'; out.style.height = (VH * SCALE / 2) + 'px';
+const low = document.createElement('canvas');
+low.width = VW; low.height = VH;
+const g = low.getContext('2d');
+
+function blit(spr, x, y) { g.drawImage(spr.canvas, Math.round(x - spr.ax), Math.round(y - spr.ay)); }
+
+function room(dark) {
+  const s = 20, ox = 13, oy = 96;
+  g.fillStyle = '#0d0705'; g.fillRect(0, 0, VW, VH);
+  drawRoom(g, { s, ox, oy, w: 9, d: 13, doors: { n: true, s: true, e: true, w: false }, seed: 5, doorStyle: { n: 'boss' }, tint: [120, 88, 64] });
+  const at = (i, j) => [ox + (i + 0.5) * s, oy + (j + 0.5) * s];
+  for (const [i, j, sd] of [[2, 4, 1], [6.2, 8, 2], [3, 10.5, 3], [7, 2, 4], [4.5, 6.5, 6]]) { const [x, y] = at(i, j); S.bloodSplat(g, x, y, s, sd); }
+  { const [x, y] = at(1.3, 6.2); S.puddle(g, x, y, s, 3); }
+  { const [x, y] = at(3.3, 8.2); S.bloodSplat(g, x, y + 5, s, 9, [90, 130, 40]); }
+  grime(g, VW, VH, 3, 0.07);
+  quantize(g, VW, VH, { spread: 12 });
+
+  const list = [];
+  for (const [i, j, k] of [[1, 3, 1], [2, 3, 2], [7, 3, 3], [1, 9, 4], [7, 9, 5], [6, 9, 6]]) list.push([at(i, j), (c, x, y, sc) => S.rock(c, x, y, sc, k), 0.42]);
+  list.push([at(0.4, 5), (c, x, y, sc) => S.skull(c, x, y, sc, 0.3)]);
+  list.push([at(5.5, 1.2), (c, x, y, sc) => S.bone(c, x, y - sc * 0.1, sc, 0.6)]);
+  list.push([at(8.5, 12.1), (c, x, y, sc) => S.skull(c, x, y, sc, -0.4)]);
+  list.push([at(0.3, 0.6), (c, x, y, sc) => S.urn(c, x, y, sc, 1), 0.4]);
+  list.push([at(8.6, 7), (c, x, y, sc) => S.urn(c, x, y, sc, 2), 0.4]);
+  list.push([at(0.3, 11.9), (c, x, y, sc) => S.candle(c, x, y, sc, 0.3, 1)]);
+  list.push([at(0.7, 12.2), (c, x, y, sc) => S.candle(c, x, y, sc, 0.3, 2)]);
+  list.push([at(8.6, 1.0), (c, x, y, sc) => S.candle(c, x, y, sc, 0.3, 3)]);
+  list.push([at(2, 6), (c, x, y, sc) => S.grub(c, x, y, sc, 0.3), 0, 1.3]);
+  list.push([at(5, 3), (c, x, y, sc) => S.fly(c, x, y, sc, 0.3), 0, 1.5]);
+  list.push([at(6, 4), (c, x, y, sc) => S.fly(c, x, y, sc, 0.7), 0, 1.5]);
+  list.push([at(4.5, 4.5), (c, x, y, sc) => S.fly(c, x, y, sc, 1.1), 0, 1.5]);
+  list.push([at(7.1, 6), (c, x, y, sc) => S.eyeball(c, x, y, sc, 0.3, { look: [-0.6, 0.8] }), 0, 1.3]);
+  list.push([at(3, 8.3), (c, x, y, sc) => S.slime(c, x, y, sc, 0.3), 0, 1.3]);
+  list.push([at(5.5, 6.5), (c, x, y, sc) => S.ram(c, x, y, sc, 0.3), 0, 1.3]);
+  list.push([at(1, 11), (c, x, y, sc) => S.coin(c, x, y, sc, 0)]);
+  list.push([at(7.4, 11.1), (c, x, y, sc) => S.heart(c, x, y, sc)]);
+  list.push([at(4, 10.4), (c, x, y, sc) => S.hero(c, x, y, sc, 0.3, { facing: 'down', moving: true }), 0, 1.45]);
+  list.sort((a, b) => a[0][1] - b[0][1]);
+  for (const [[x, y], draw, dy = 0, size = 1] of list) {
+    const sc = s * size;
+    const spr = pixelSprite((c, px, py, ss) => draw(c, px, py + dy * ss, ss), sc, 2.2, 2.6);
+    blit(spr, x, y);
+  }
+  const [hx, hy] = at(4, 10.4);
+  const tear = pixelSprite((c, x, y, ss) => S.tear(c, x, y - 0.5 * ss, ss), s, 0.8, 1.2);
+  const etear = pixelSprite((c, x, y, ss) => S.tear(c, x, y - 0.5 * ss, ss, { enemy: true }), s, 0.8, 1.2);
+  for (const [dx, dy] of [[0.1, -2.0], [0.5, -3.6], [1.0, -5.1]]) blit(tear, hx + dx * s, hy + dy * s);
+  for (const [i, j] of [[6.3, 7.2], [5.7, 8.4]]) { const [x, y] = at(i, j); blit(etear, x, y); }
+
+  // light in dithered steps
+  light(g, VW, VH, dark ? 0.35 : 0.85, [
+    { x: hx + 8, y: hy - 10, r: dark ? 95 : 80, k: dark ? 0.95 : 0.45 },
+    { x: ox + 8, y: oy + 12 * s, r: 50, k: 0.6 },
+    { x: ox + 8.6 * s, y: oy + 1.3 * s, r: 50, k: 0.6 },
+  ], { steps: dark ? 5 : 6 });
+
+  // HUD in pixels
+  const hs = 14;
+  for (let k = 0; k < 4; k++) {
+    const h = pixelSprite((c, x, y, ss) => S.heart(c, x, y, ss, { half: k === 2, empty: k === 3 }), hs, 1, 1);
+    blit(h, 10 + k * 12, 22);
+  }
+  const cn = pixelSprite((c, x, y, ss) => S.coin(c, x, y, ss, 0), hs, 1, 1);
+  blit(cn, 9, 38);
+  const label = document.createElement('canvas');
+  label.width = 120; label.height = 14;
+  const lg = label.getContext('2d');
+  lg.font = 'bold 9px monospace';
+  lg.fillStyle = '#f6c84a'; lg.fillText('07', 0, 10);
+  lg.fillStyle = '#c0b2a2'; lg.fillText('KJELLEREN I', 20, 10);
+  quantize(lg, 120, 14, { spread: 0, alphaCut: 110 });
+  outline(lg, 120, 14);
+  g.drawImage(label, 16, 30);
+  // minimap
+  for (const [mx, my, k] of [[1, 2, 'v'], [1, 1, 'c'], [2, 1, 'v'], [1, 0, 'b'], [0, 1, 's'], [2, 2, 't']]) {
+    const x = VW - 44 + mx * 13, y = 10 + my * 9;
+    g.fillStyle = '#0d0705'; g.fillRect(x - 1, y - 1, 13, 9);
+    g.fillStyle = k === 'c' ? '#fff1e6' : k === 's' ? '#2a1810' : k === 'b' ? '#861a1e' : k === 't' ? '#d89a2a' : '#6e625a';
+    g.fillRect(x, y, 11, 7);
+  }
+}
+
+function sheet() {
+  g.fillStyle = '#1a0e09'; g.fillRect(0, 0, VW, VH);
+  grime(g, VW, VH, 9, 0.05);
+  quantize(g, VW, VH, { spread: 10 });
+  const s = 26;
+  const put = (draw, x, y, size = 1, w = 2.4, h = 2.8) => blit(pixelSprite(draw, s * size, w, h), x, y);
+  put((c, x, y, ss) => S.hero(c, x, y, ss, 0.3, { facing: 'down' }), 30, 78, 1.25);
+  put((c, x, y, ss) => S.hero(c, x, y, ss, 0.3, { facing: 'left', moving: true }), 80, 78, 1.25);
+  put((c, x, y, ss) => S.hero(c, x, y, ss, 0.45, { facing: 'right', moving: true }), 130, 78, 1.25);
+  put((c, x, y, ss) => S.hero(c, x, y, ss, 0.3, { facing: 'up' }), 178, 78, 1.25);
+  put((c, x, y, ss) => S.fly(c, x, y, ss, 0.3), 28, 158, 1.2);
+  put((c, x, y, ss) => S.grub(c, x, y, ss, 0.3), 78, 158);
+  put((c, x, y, ss) => S.eyeball(c, x, y, ss, 0.3), 128, 158);
+  put((c, x, y, ss) => S.ram(c, x, y, ss, 0.3), 178, 158);
+  put((c, x, y, ss) => S.slime(c, x, y, ss, 0.3), 34, 240);
+  put((c, x, y, ss) => S.bloat(c, x, y, ss, 0.3), 130, 262, 0.8, 3.2, 3.2);
+  put((c, x, y, ss) => S.rock(c, x, y, ss, 3), 28, 318);
+  put((c, x, y, ss) => S.urn(c, x, y, ss, 1), 66, 318);
+  put((c, x, y, ss) => S.candle(c, x, y, ss, 0.3, 2), 98, 318);
+  put((c, x, y, ss) => S.skull(c, x, y, ss, 0.2), 128, 314);
+  put((c, x, y, ss) => S.pedestal(c, x, y, ss), 172, 318);
+  put((c, x, y, ss) => S.heart(c, x, y, ss), 26, 380);
+  put((c, x, y, ss) => S.coin(c, x, y, ss, 0.2), 60, 380);
+  put((c, x, y, ss) => S.tear(c, x, y - 0.4 * ss, ss), 94, 380, 1, 1, 1.4);
+  put((c, x, y, ss) => S.tear(c, x, y - 0.4 * ss, ss, { color: '#ff8a3a' }), 122, 380, 1, 1, 1.4);
+  put((c, x, y, ss) => S.tear(c, x, y - 0.4 * ss, ss, { color: '#8af0ff' }), 150, 380, 1, 1, 1.4);
+  put((c, x, y, ss) => S.tear(c, x, y - 0.4 * ss, ss, { enemy: true }), 178, 380, 1, 1, 1.4);
+}
+
+if (style === 'sheet') sheet(); else room(style === 'dark');
+const og = out.getContext('2d');
+og.imageSmoothingEnabled = false;
+og.drawImage(low, 0, 0, VW * SCALE, VH * SCALE);
+window.done = true;
+</script></body></html>

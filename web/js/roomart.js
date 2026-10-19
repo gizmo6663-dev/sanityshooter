@@ -66,19 +66,20 @@ export function drawRoom(ctx, room) {
   for (let j = -1; j < rd / fs + 1; j++) {
     for (let i = -1; i < rw / fs + 1; i++) {
       const v = 0.78 + r() * 0.34;
-      const x = ox + i * fs + (j % 2 ? fs / 2 : 0) + 3 + (r() - 0.5) * 3;
-      const y = oy + j * fs + 3 + (r() - 0.5) * 3;
-      const sw = fs - 6 - r() * 4, sh = fs - 6 - r() * 4;
+      const gap = Math.max(1, fs * 0.04);
+      const x = ox + i * fs + (j % 2 ? fs / 2 : 0) + gap + (r() - 0.5) * gap;
+      const y = oy + j * fs + gap + (r() - 0.5) * gap;
+      const sw = fs - gap * 2 - r() * gap * 1.5, sh = fs - gap * 2 - r() * gap * 1.5;
       const c = (k) => Math.round(tint[k] * v);
       ctx.beginPath();
-      ctx.roundRect(x, y, sw, sh, 7 + r() * 6);
+      ctx.roundRect(x, y, sw, sh, fs * (0.06 + r() * 0.06));
       const g = ctx.createLinearGradient(x, y, x + sw * 0.3, y + sh);
       g.addColorStop(0, `rgb(${c(0) * 1.15},${c(1) * 1.15},${c(2) * 1.15})`);
       g.addColorStop(1, `rgb(${c(0) * 0.8},${c(1) * 0.8},${c(2) * 0.8})`);
       ctx.fillStyle = g;
       ctx.fill();
       ctx.strokeStyle = 'rgba(26,14,9,0.75)';
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = Math.max(1, fs * 0.05);
       ctx.stroke();
       // worn bevel: light top edge, dark bottom edge
       ctx.strokeStyle = 'rgba(255,235,205,0.12)';
@@ -103,18 +104,18 @@ export function drawRoom(ctx, room) {
     }
   }
   // moss creeping in the mortar and corners
-  for (let k = 0; k < 7; k++) {
-    const mx = ox + r() * rw, my = oy + (r() < 0.5 ? r() * 40 : rd - r() * 40);
-    for (let b = 0; b < 12; b++) {
-      ctx.fillStyle = `rgba(${70 + r() * 30},${95 + r() * 30},${35 + r() * 15},${0.35 + r() * 0.3})`;
+  for (let k = 0; k < 5; k++) {
+    const mx = ox + r() * rw, my = oy + (r() < 0.5 ? r() * s * 1.5 : rd - r() * s * 1.5);
+    for (let b = 0; b < 8; b++) {
+      ctx.fillStyle = `rgba(${70 + r() * 30},${95 + r() * 30},${35 + r() * 15},${0.25 + r() * 0.25})`;
       ctx.beginPath();
-      ctx.arc(mx + (r() - 0.5) * 30, my + (r() - 0.5) * 16, 2 + r() * 4, 0, Math.PI * 2);
+      ctx.arc(mx + (r() - 0.5) * s * 0.8, my + (r() - 0.5) * s * 0.4, s * (0.04 + r() * 0.08), 0, Math.PI * 2);
       ctx.fill();
     }
   }
   // grime blotches
   for (let k = 0; k < 10; k++) {
-    const gx = ox + r() * rw, gy = oy + r() * rd, gr = 20 + r() * 50;
+    const gx = ox + r() * rw, gy = oy + r() * rd, gr = s * (0.5 + r() * 1.2);
     const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
     g.addColorStop(0, 'rgba(20,10,4,0.28)'); g.addColorStop(1, 'rgba(20,10,4,0)');
     ctx.fillStyle = g;
