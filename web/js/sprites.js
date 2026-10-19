@@ -105,218 +105,277 @@ export function glow(ctx, x, y, r, color = '255,180,90', a = 0.35) {
 }
 
 // --- Hero --------------------------------------------------------------------
-/** facing: 'down' | 'up' | 'left' | 'right'. moving makes it walk. */
-export function hero(ctx, x, y, s, t, { facing = 'down', moving = false } = {}) {
+/**
+ * The wanderer: a small figure in a dark pointed hood, face lost in shadow
+ * except for two glowing eyes, a red scarf that streams behind, and a
+ * lantern on a chain. facing: 'down' | 'up' | 'left' | 'right'.
+ * eyes: glow colour. costume: list of extras from items
+ * ('halo', 'horns', 'crown', 'mask', 'bones', 'flame').
+ */
+export function hero(ctx, x, y, s, t, { facing = 'down', moving = false, eyes = '#ffd27a', costume = [], blink = false } = {}) {
   const step = moving ? Math.sin(t * 12) : 0;
   const bob = moving ? Math.abs(step) * 0.05 * s : Math.sin(t * 2.2) * 0.012 * s;
   const side = facing === 'left' ? -1 : facing === 'right' ? 1 : 0;
+  const has = (c) => costume.includes(c);
+  const CL = '#626078', C = '#38364c', CD = '#16141f';
+  const SC_L = '#e04a44', SC = '#a8222a', SC_D = '#4a080c';
   shadow(ctx, x, y, s, 0.34);
-
-  // boots
-  for (const [bx, lift] of [[-0.12, step > 0 ? 0.05 : 0], [0.12, step < 0 ? 0.05 : 0]]) {
-    ellipsePath(ctx, x + bx * s, y - 0.04 * s - lift * s, 0.09 * s, 0.06 * s);
-    paint(ctx, s, volume(ctx, x + bx * s, y - 0.05 * s, 0.09 * s, '#5a3e2c', '#2e1d14', '#160c07'), 0.045);
-  }
   const by = y - bob;
+  const hy = by - 0.86 * s;
 
-  // lantern glow behind everything on its side
-  const lx = x + (side === 0 ? 0.33 : side * 0.36) * s, ly = by - 0.27 * s + step * 0.02 * s;
-  if (facing !== 'up') glow(ctx, lx, ly, 0.75 * s, '255,175,80', 0.3);
+  // --- scarf streaming behind (drawn first when it is behind the body) ---
+  const scarf = (front) => {
+    const dir = side !== 0 ? -side : 0;
+    if ((facing === 'up') !== front && side === 0) return;
+    if (side !== 0 && front) return;
+    const sx0 = x + side * 0.05 * s, sy0 = by - 0.6 * s;
+    const len = (moving ? 0.55 : 0.4) * s;
+    const wave = (k) => Math.sin(t * (moving ? 14 : 4) - k * 3) * (moving ? 0.06 : 0.03) * s;
+    ctx.beginPath();
+    if (side !== 0) {
+      // trails sideways behind the shoulders
+      ctx.moveTo(sx0, sy0 - 0.05 * s);
+      for (let k = 1; k <= 4; k++) ctx.lineTo(sx0 + dir * len * (k / 4), sy0 - 0.06 * s + wave(k) + k * 0.02 * s);
+      ctx.lineTo(sx0 + dir * len * 1.05, sy0 + 0.05 * s + wave(4));
+      for (let k = 4; k >= 1; k--) ctx.lineTo(sx0 + dir * len * (k / 4), sy0 + 0.06 * s + wave(k) + k * 0.03 * s);
+      ctx.lineTo(sx0, sy0 + 0.06 * s);
+    } else {
+      // hangs down the back in two tails
+      for (const tx of [-0.07, 0.07]) {
+        ctx.moveTo(x + tx * s - 0.05 * s, sy0);
+        ctx.lineTo(x + tx * s + wave(1) - 0.05 * s, sy0 + len * 0.6);
+        ctx.lineTo(x + tx * s + wave(2) * 1.5, sy0 + len * 0.75);
+        ctx.lineTo(x + tx * s + wave(1) + 0.05 * s, sy0 + len * 0.6);
+        ctx.lineTo(x + tx * s + 0.05 * s, sy0);
+      }
+    }
+    ctx.closePath();
+    paint(ctx, s, volume(ctx, sx0, sy0, 0.3 * s, SC_L, SC, SC_D), 0.045);
+  };
+  scarf(false);
 
-  // cloak body with ragged hem
+  // --- lantern on a chain, swinging ---
+  const lside = side === 0 ? 1 : side;
+  const swing = Math.sin(t * (moving ? 12 : 2.2) + 0.6) * (moving ? 0.35 : 0.12);
+  const hx = x + lside * 0.3 * s, hyy = by - 0.38 * s;        // hand
+  const lx = hx + Math.sin(swing) * 0.16 * s, ly = hyy + Math.cos(swing) * 0.16 * s;
+  glow(ctx, lx, ly, 0.6 * s, '255,175,80', 0.22);
+  const lantern = () => {
+    ink(ctx, s, 0.025);
+    ctx.beginPath(); ctx.moveTo(hx, hyy); ctx.lineTo(lx, ly - 0.08 * s); ctx.stroke();
+    ctx.strokeStyle = '#8a7a60'; ctx.lineWidth = s * 0.012; ctx.stroke();
+    // cage
+    ctx.beginPath();
+    ctx.moveTo(lx - 0.08 * s, ly - 0.07 * s); ctx.lineTo(lx + 0.08 * s, ly - 0.07 * s);
+    ctx.lineTo(lx + 0.09 * s, ly + 0.08 * s); ctx.lineTo(lx - 0.09 * s, ly + 0.08 * s); ctx.closePath();
+    const gl = ctx.createLinearGradient(lx, ly - 0.06 * s, lx, ly + 0.07 * s);
+    gl.addColorStop(0, '#fff2b8'); gl.addColorStop(1, '#ff8a2a');
+    paint(ctx, s, gl, 0.03);
+    ctx.fillStyle = '#b08a40';
+    ctx.fillRect(lx - 0.09 * s, ly - 0.11 * s, 0.18 * s, 0.045 * s);
+    ctx.fillRect(lx - 0.1 * s, ly + 0.07 * s, 0.2 * s, 0.04 * s);
+    ink(ctx, s, 0.015);
+    ctx.beginPath(); ctx.moveTo(lx, ly - 0.06 * s); ctx.lineTo(lx, ly + 0.07 * s); ctx.stroke();
+    ctx.fillStyle = '#ffe890';
+    ctx.fillRect(lx - 0.05 * s, ly - 0.04 * s, 0.1 * s, 0.1 * s);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(lx, ly + 0.01 * s, 0.03 * s, 0, Math.PI * 2); ctx.fill();
+  };
+  if (facing === 'up') lantern();
+
+  // --- boots ---
+  for (const [bx, lift] of [[-0.11, step > 0 ? 0.05 : 0], [0.11, step < 0 ? 0.05 : 0]]) {
+    ctx.beginPath();
+    ctx.roundRect(x + bx * s - 0.075 * s + side * 0.02 * s, y - 0.12 * s - lift * s, 0.15 * s, 0.11 * s, [0.03 * s, 0.03 * s, 0.02 * s, 0.02 * s]);
+    paint(ctx, s, volume(ctx, x + bx * s, y - 0.08 * s, 0.1 * s, '#5a4038', '#2a1a16', '#0c0606'), 0.045);
+  }
+
+  // --- cloak: a dark bell with a jagged, torn hem ---
   const r = rng(11);
   ctx.beginPath();
-  ctx.moveTo(x - 0.17 * s, by - 0.55 * s);
-  ctx.bezierCurveTo(x - 0.27 * s, by - 0.45 * s, x - 0.34 * s, by - 0.2 * s, x - 0.32 * s, by - 0.1 * s);
-  const hem = 9;
+  ctx.moveTo(x - 0.16 * s, by - 0.6 * s);
+  ctx.bezierCurveTo(x - 0.26 * s, by - 0.48 * s, x - 0.34 * s, by - 0.22 * s, x - 0.35 * s, by - 0.1 * s);
+  const hem = 7, flap = moving ? Math.sin(t * 12) * 0.03 : 0;
   for (let k = 0; k <= hem; k++) {
-    const hx = x - 0.32 * s + (k / hem) * 0.64 * s;
-    ctx.lineTo(hx, by - (k % 2 ? 0.015 + r() * 0.03 : 0.1 + r() * 0.03) * s);
+    const hxk = x - 0.35 * s + (k / hem) * 0.7 * s;
+    ctx.lineTo(hxk, by - (k % 2 ? 0.02 + r() * 0.03 - flap * (k % 4 === 1 ? 1 : -1) : 0.13 + r() * 0.03) * s);
   }
-  ctx.bezierCurveTo(x + 0.34 * s, by - 0.2 * s, x + 0.27 * s, by - 0.45 * s, x + 0.17 * s, by - 0.55 * s);
+  ctx.bezierCurveTo(x + 0.34 * s, by - 0.22 * s, x + 0.26 * s, by - 0.48 * s, x + 0.16 * s, by - 0.6 * s);
   ctx.closePath();
-  paint(ctx, s, volume(ctx, x - 0.05 * s, by - 0.32 * s, 0.4 * s, '#8a6548', '#654632', '#3a2618'));
+  paint(ctx, s, volume(ctx, x - 0.08 * s, by - 0.35 * s, 0.42 * s, CL, C, CD));
   ctx.save();
   ctx.clip();
-  // folds
-  ctx.strokeStyle = 'rgba(30,14,6,0.45)';
-  ctx.lineWidth = s * 0.022;
-  for (const fx of [-0.14, 0.02, 0.15]) {
-    ctx.beginPath();
-    ctx.moveTo(x + fx * s, by - 0.45 * s);
-    ctx.quadraticCurveTo(x + (fx + 0.04) * s, by - 0.25 * s, x + (fx - 0.02) * s, by - 0.06 * s);
-    ctx.stroke();
+  // folds and a pale trim along the hem
+  ctx.strokeStyle = 'rgba(8,6,14,0.5)';
+  ctx.lineWidth = s * 0.025;
+  for (const fx of [-0.13, 0.13]) {
+    ctx.beginPath(); ctx.moveTo(x + fx * 0.6 * s, by - 0.5 * s); ctx.quadraticCurveTo(x + fx * 1.2 * s, by - 0.25 * s, x + fx * s, by - 0.05 * s); ctx.stroke();
   }
-  // patch with stitches
-  ctx.fillStyle = '#7a5a3a';
-  ctx.fillRect(x - 0.24 * s, by - 0.24 * s, 0.11 * s, 0.1 * s);
-  ctx.strokeStyle = 'rgba(30,14,6,0.6)';
-  ctx.lineWidth = s * 0.012;
-  ctx.strokeRect(x - 0.24 * s, by - 0.24 * s, 0.11 * s, 0.1 * s);
-  ctx.setLineDash([s * 0.015, s * 0.02]);
-  ctx.strokeStyle = '#d8c090';
-  ctx.strokeRect(x - 0.23 * s, by - 0.23 * s, 0.09 * s, 0.08 * s);
-  ctx.setLineDash([]);
-  // dirt at the hem
-  speckle(ctx, x, by - 0.08 * s, 0.3 * s, 0.05 * s, 18, 'rgba(30,18,8,0.4)', s * 0.012, 3);
+  if (facing !== 'up') {
+    // front opening with a strip of red lining
+    ctx.fillStyle = '#5a0e12';
+    ctx.beginPath(); ctx.moveTo(x + side * 0.12 * s - 0.02 * s, by - 0.42 * s); ctx.lineTo(x + side * 0.12 * s + 0.05 * s, by - 0.02 * s); ctx.lineTo(x + side * 0.12 * s - 0.06 * s, by - 0.02 * s); ctx.closePath(); ctx.fill();
+  }
   ctx.restore();
-
-  // rope belt with knot
+  // belt with a bone-white buckle
   ctx.strokeStyle = INK;
-  ctx.lineWidth = s * 0.06;
-  ctx.beginPath(); ctx.moveTo(x - 0.24 * s, by - 0.31 * s); ctx.quadraticCurveTo(x, by - 0.25 * s, x + 0.24 * s, by - 0.31 * s); ctx.stroke();
-  ctx.strokeStyle = '#b48a52';
-  ctx.lineWidth = s * 0.035;
-  ctx.stroke();
-  ctx.setLineDash([s * 0.02, s * 0.025]);
-  ctx.strokeStyle = '#7a5a30';
-  ctx.lineWidth = s * 0.012;
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.lineWidth = s * 0.07;
+  ctx.beginPath(); ctx.moveTo(x - 0.27 * s, by - 0.3 * s); ctx.quadraticCurveTo(x, by - 0.24 * s, x + 0.27 * s, by - 0.3 * s); ctx.stroke();
+  ctx.strokeStyle = '#4a3020'; ctx.lineWidth = s * 0.04; ctx.stroke();
   if (facing !== 'up') {
-    ink(ctx, s, 0.03);
-    ctx.fillStyle = '#b48a52';
-    ellipsePath(ctx, x - 0.08 * s, by - 0.27 * s, 0.035 * s, 0.03 * s); ctx.fill(); ctx.stroke();
-    ctx.lineWidth = s * 0.025;
-    ctx.beginPath(); ctx.moveTo(x - 0.09 * s, by - 0.25 * s); ctx.lineTo(x - 0.11 * s, by - 0.15 * s); ctx.stroke();
+    ctx.beginPath(); ctx.rect(x + side * 0.1 * s - 0.04 * s, by - 0.3 * s, 0.08 * s, 0.065 * s);
+    paint(ctx, s, '#d8c8a0', 0.025);
   }
-
-  // the lantern
+  // shoulder guard
+  if (has('bones')) {
+    for (const sx of [-1, 1]) {
+      for (let k = 0; k < 3; k++) {
+        ellipsePath(ctx, x + sx * (0.2 + k * 0.03) * s, by - (0.57 - k * 0.06) * s, 0.09 * s, 0.045 * s, sx * 0.4);
+        paint(ctx, s, volume(ctx, x + sx * 0.22 * s, by - 0.55 * s, 0.1 * s, '#fffbea', '#e0d4b4', '#9a8a6a'), 0.03);
+      }
+    }
+  } else {
+    ellipsePath(ctx, x + lside * 0.2 * s, by - 0.55 * s, 0.1 * s, 0.07 * s, lside * 0.3);
+    paint(ctx, s, volume(ctx, x + lside * 0.2 * s, by - 0.56 * s, 0.1 * s, '#6a4a38', '#3a2418', '#140a06'), 0.035);
+  }
+  // the free hand, gloved, on the far side
+  if (facing === 'down' || side !== 0) {
+    const ox = side === 0 ? -0.3 : -side * 0.05;
+    ellipsePath(ctx, x + ox * s, by - 0.3 * s + step * 0.02 * s, 0.05 * s, 0.045 * s);
+    paint(ctx, s, '#3a2a24', 0.035);
+  }
+  scarf(true);
   if (facing !== 'up') {
-    ink(ctx, s, 0.035);
-    ctx.beginPath(); ctx.arc(lx, ly - 0.1 * s, 0.05 * s, Math.PI, 0); ctx.stroke();
-    // frame
-    ctx.fillStyle = '#2a2420';
-    ctx.beginPath(); ctx.roundRect(lx - 0.075 * s, ly - 0.1 * s, 0.15 * s, 0.03 * s, s * 0.01); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.roundRect(lx - 0.075 * s, ly + 0.07 * s, 0.15 * s, 0.03 * s, s * 0.01); ctx.fill(); ctx.stroke();
-    const gl = ctx.createLinearGradient(lx, ly - 0.07 * s, lx, ly + 0.07 * s);
-    gl.addColorStop(0, '#ffe9a8'); gl.addColorStop(1, '#ff9a3a');
-    ctx.fillStyle = gl;
-    ctx.fillRect(lx - 0.06 * s, ly - 0.07 * s, 0.12 * s, 0.14 * s);
-    ctx.strokeRect(lx - 0.06 * s, ly - 0.07 * s, 0.12 * s, 0.14 * s);
-    ctx.beginPath(); ctx.moveTo(lx, ly - 0.07 * s); ctx.lineTo(lx, ly + 0.07 * s); ctx.stroke();
-    // flame
-    const fl = 1 + Math.sin(t * 17) * 0.12;
-    ctx.fillStyle = '#fff6d0';
+    // the scarf wrapped round the neck, one end hanging down the chest
     ctx.beginPath();
-    ctx.moveTo(lx, ly - 0.05 * s * fl);
-    ctx.quadraticCurveTo(lx + 0.03 * s, ly + 0.01 * s, lx, ly + 0.03 * s);
-    ctx.quadraticCurveTo(lx - 0.03 * s, ly + 0.01 * s, lx, ly - 0.05 * s * fl);
-    ctx.fill();
-    // hand holding it
-    ellipsePath(ctx, lx, ly - 0.15 * s, 0.045 * s, 0.04 * s);
-    paint(ctx, s, '#e9d2be', 0.035);
-  }
-  // the other hand peeking out of the sleeve
-  if (facing === 'down') {
-    ellipsePath(ctx, x - 0.29 * s, by - 0.24 * s, 0.045 * s, 0.04 * s);
-    paint(ctx, s, '#e9d2be', 0.035);
+    ctx.ellipse(x, by - 0.56 * s, 0.25 * s, 0.1 * s, 0, 0, Math.PI * 2);
+    paint(ctx, s, volume(ctx, x - 0.05 * s, by - 0.58 * s, 0.25 * s, SC_L, SC, SC_D), 0.045);
+    if (side === 0) {
+      const w2 = Math.sin(t * (moving ? 12 : 3)) * 0.02 * s;
+      ctx.beginPath();
+      ctx.moveTo(x - 0.15 * s, by - 0.6 * s);
+      ctx.lineTo(x - 0.18 * s + w2, by - 0.38 * s);
+      ctx.lineTo(x - 0.14 * s + w2, by - 0.33 * s);
+      ctx.lineTo(x - 0.08 * s + w2, by - 0.38 * s);
+      ctx.lineTo(x - 0.05 * s, by - 0.6 * s);
+      ctx.closePath();
+      paint(ctx, s, volume(ctx, x - 0.12 * s, by - 0.5 * s, 0.15 * s, SC_L, SC, SC_D), 0.04);
+    }
   }
 
-  // --- head in a hood ---
-  const hy = by - 0.84 * s;
-  const fx = side * 0.07 * s;
-  const HOOD_L = '#7e5a40', HOOD = '#5c3f2c', HOOD_D = '#2e1c11';
-  // hood shell with a floppy point
-  ctx.beginPath();
-  ctx.moveTo(x - 0.45 * s, hy + 0.14 * s);
-  ctx.bezierCurveTo(x - 0.54 * s, hy - 0.3 * s, x - 0.24 * s, hy - 0.52 * s, x + 0.02 * s, hy - 0.5 * s);
-  ctx.bezierCurveTo(x + 0.22 * s, hy - 0.5 * s, x + 0.36 * s, hy - 0.62 * s, x + 0.5 * s - side * 0.15 * s, hy - 0.66 * s);
-  ctx.bezierCurveTo(x + 0.44 * s, hy - 0.5 * s, x + 0.5 * s, hy - 0.3 * s, x + 0.47 * s, hy - 0.05 * s);
-  ctx.bezierCurveTo(x + 0.46 * s, hy + 0.26 * s, x + 0.2 * s, hy + 0.33 * s, x, hy + 0.33 * s);
-  ctx.bezierCurveTo(x - 0.24 * s, hy + 0.33 * s, x - 0.44 * s, hy + 0.28 * s, x - 0.45 * s, hy + 0.14 * s);
-  ctx.closePath();
-  paint(ctx, s, volume(ctx, x - 0.05 * s, hy - 0.08 * s, 0.5 * s, HOOD_L, HOOD, HOOD_D), 0.065);
+  // --- the hood: tall, with a point that bends backwards ---
+  const tip = side !== 0 ? -side : 0.6;            // where the point leans
+  const sway = Math.sin(t * (moving ? 12 : 2.2)) * 0.03 * s;
+  const hood = () => {
+    ctx.beginPath();
+    ctx.moveTo(x - 0.4 * s, hy + 0.2 * s);
+    ctx.bezierCurveTo(x - 0.5 * s, hy - 0.15 * s, x - 0.3 * s, hy - 0.42 * s, x - 0.05 * s + tip * 0.05 * s, hy - 0.45 * s);
+    ctx.quadraticCurveTo(x + tip * 0.3 * s, hy - 0.62 * s, x + tip * 0.52 * s + sway, hy - 0.72 * s);
+    ctx.quadraticCurveTo(x + tip * 0.32 * s, hy - 0.42 * s, x + 0.36 * s * (tip < 0 ? 0.9 : 1), hy - 0.3 * s);
+    ctx.bezierCurveTo(x + 0.5 * s, hy - 0.12 * s, x + 0.48 * s, hy + 0.12 * s, x + 0.4 * s, hy + 0.2 * s);
+    ctx.quadraticCurveTo(x, hy + 0.36 * s, x - 0.4 * s, hy + 0.2 * s);
+    ctx.closePath();
+  };
+  hood();
+  paint(ctx, s, volume(ctx, x - 0.1 * s, hy - 0.15 * s, 0.55 * s, CL, C, CD), 0.065);
   ctx.save();
+  hood();
   ctx.clip();
-  ctx.strokeStyle = 'rgba(25,12,5,0.45)';
-  ctx.lineWidth = s * 0.02;
-  ctx.beginPath(); ctx.moveTo(x + 0.05 * s, hy - 0.48 * s); ctx.quadraticCurveTo(x + 0.3 * s, hy - 0.3 * s, x + 0.4 * s, hy + 0.05 * s); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x - 0.1 * s, hy - 0.46 * s); ctx.quadraticCurveTo(x - 0.38 * s, hy - 0.25 * s, x - 0.4 * s, hy + 0.1 * s); ctx.stroke();
-  // seam with stitches over the top
-  ctx.setLineDash([s * 0.018, s * 0.022]);
-  ctx.strokeStyle = 'rgba(220,190,140,0.55)';
-  ctx.lineWidth = s * 0.012;
-  ctx.beginPath(); ctx.moveTo(x - 0.05 * s, hy - 0.5 * s); ctx.quadraticCurveTo(x + 0.2 * s, hy - 0.52 * s, x + 0.45 * s - side * 0.15 * s, hy - 0.64 * s); ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(8,6,14,0.45)';
+  ctx.lineWidth = s * 0.025;
+  ctx.beginPath(); ctx.moveTo(x - 0.05 * s, hy - 0.42 * s); ctx.quadraticCurveTo(x - 0.35 * s, hy - 0.2 * s, x - 0.38 * s, hy + 0.12 * s); ctx.stroke();
+  // light catching the top of the hood
+  ctx.strokeStyle = 'rgba(200,200,230,0.25)';
+  ctx.lineWidth = s * 0.03;
+  ctx.beginPath(); ctx.moveTo(x - 0.3 * s, hy - 0.25 * s); ctx.quadraticCurveTo(x - 0.1 * s, hy - 0.45 * s, x + tip * 0.3 * s, hy - 0.58 * s); ctx.stroke();
   ctx.restore();
+
+  if (has('horns')) {
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + sx * 0.25 * s, hy - 0.3 * s);
+      ctx.quadraticCurveTo(x + sx * 0.5 * s, hy - 0.4 * s, x + sx * 0.46 * s, hy - 0.72 * s);
+      ctx.quadraticCurveTo(x + sx * 0.4 * s, hy - 0.45 * s, x + sx * 0.17 * s, hy - 0.4 * s);
+      ctx.closePath();
+      paint(ctx, s, volume(ctx, x + sx * 0.35 * s, hy - 0.5 * s, 0.2 * s, '#5a4a4a', '#2a1a1a', '#0a0404'), 0.04);
+    }
+  }
+  if (has('crown')) {
+    ctx.beginPath();
+    ctx.moveTo(x - 0.26 * s, hy - 0.36 * s);
+    for (let k = 0; k <= 4; k++) {
+      const cx = x - 0.26 * s + k * 0.13 * s;
+      ctx.lineTo(cx, hy - (k % 2 ? 0.48 : 0.6) * s);
+      if (k < 4) ctx.lineTo(cx + 0.065 * s, hy - 0.42 * s);
+    }
+    ctx.lineTo(x + 0.26 * s, hy - 0.34 * s);
+    ctx.closePath();
+    paint(ctx, s, volume(ctx, x, hy - 0.45 * s, 0.25 * s, '#fff0a0', '#d8a830', '#6a4a10'), 0.04);
+    glow(ctx, x, hy - 0.5 * s, 0.25 * s, '255,240,150', 0.3);
+  }
+  if (has('halo')) {
+    glow(ctx, x, hy - 0.86 * s, 0.4 * s, '180,120,255', 0.45);
+    ctx.strokeStyle = INK; ctx.lineWidth = s * 0.07;
+    ctx.beginPath(); ctx.ellipse(x, hy - 0.86 * s, 0.22 * s, 0.06 * s, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#d8b8ff'; ctx.lineWidth = s * 0.035; ctx.stroke();
+  }
 
   if (facing === 'up') {
-    // back of the hood: a deep fold down the middle
-    ctx.strokeStyle = 'rgba(25,12,5,0.5)';
-    ctx.lineWidth = s * 0.03;
-    ctx.beginPath(); ctx.moveTo(x, hy - 0.45 * s); ctx.quadraticCurveTo(x - 0.04 * s, hy - 0.05 * s, x, hy + 0.3 * s); ctx.stroke();
-    glow(ctx, x + 0.35 * s, by - 0.3 * s, 0.5 * s, '255,175,80', 0.18);
+    if (has('flame')) glow(ctx, x + tip * 0.52 * s, hy - 0.72 * s, 0.2 * s, '255,140,40', 0.7);
     return;
   }
-  // dark inside of the hood framing the face
-  ellipsePath(ctx, x + fx, hy + 0.03 * s, 0.37 * s, 0.33 * s);
-  ctx.fillStyle = '#140a05';
+
+  // --- the dark opening of the hood, with glowing eyes ---
+  const fx = side * 0.12 * s;
+  ellipsePath(ctx, x + fx, hy + 0.04 * s, side ? 0.24 * s : 0.3 * s, 0.27 * s);
+  const dark = ctx.createRadialGradient(x + fx, hy + 0.08 * s, 0.02 * s, x + fx, hy + 0.02 * s, 0.32 * s);
+  dark.addColorStop(0, '#000000'); dark.addColorStop(0.75, '#07050c'); dark.addColorStop(1, '#1c1a28');
+  ctx.fillStyle = dark;
   ctx.fill();
-  // face
-  ellipsePath(ctx, x + fx * 1.1, hy + 0.05 * s, 0.32 * s, 0.29 * s);
-  ctx.fillStyle = volume(ctx, x + fx, hy + 0.02 * s, 0.33 * s, '#fff2e4', '#f0dac6', '#c8a48c');
-  ctx.fill();
-  ink(ctx, s, 0.035);
+  ink(ctx, s, 0.04);
   ctx.stroke();
-  // hair strands under the hood rim
-  ctx.fillStyle = '#2a1a10';
-  for (let k = 0; k < 5; k++) {
-    const hx = x + fx + (k - 2) * 0.1 * s;
-    ctx.beginPath();
-    ctx.moveTo(hx - 0.06 * s, hy - 0.2 * s);
-    ctx.quadraticCurveTo(hx + 0.01 * s, hy - 0.08 * s + (k % 2) * 0.02 * s, hx + 0.05 * s, hy - 0.18 * s);
-    ctx.fill();
+  if (has('mask')) {
+    // a cracked white mask fills the opening
+    ellipsePath(ctx, x + fx, hy + 0.05 * s, side ? 0.19 * s : 0.24 * s, 0.22 * s);
+    paint(ctx, s, volume(ctx, x + fx, hy, 0.24 * s, '#ffffff', '#e6e0d4', '#9a9488'), 0.03);
+    ctx.strokeStyle = 'rgba(40,30,30,0.7)'; ctx.lineWidth = s * 0.012;
+    ctx.beginPath(); ctx.moveTo(x + fx + 0.08 * s, hy - 0.14 * s); ctx.lineTo(x + fx + 0.04 * s, hy - 0.02 * s); ctx.lineTo(x + fx + 0.07 * s, hy + 0.06 * s); ctx.stroke();
   }
-  // cheeks
-  for (const sx of [-1, 1]) {
-    const gc = ctx.createRadialGradient(x + fx + sx * 0.18 * s, hy + 0.13 * s, 0, x + fx + sx * 0.18 * s, hy + 0.13 * s, 0.08 * s);
-    gc.addColorStop(0, 'rgba(220,120,110,0.5)'); gc.addColorStop(1, 'rgba(220,120,110,0)');
-    ctx.fillStyle = gc;
-    ctx.fillRect(x + fx + sx * 0.18 * s - 0.08 * s, hy + 0.05 * s, 0.16 * s, 0.16 * s);
+  const eyePos = side === 0 ? [-0.11, 0.11] : [side * 0.14];
+  const ec = hexRgb(eyes);
+  for (const ex of eyePos) {
+    const exx = x + ex * s + (side ? fx * 0.5 : 0), eyy = hy + 0.04 * s;
+    glow(ctx, exx, eyy, 0.2 * s, ec, 0.7);
+    if (has('mask')) { ellipsePath(ctx, exx, eyy, 0.055 * s, 0.05 * s); ctx.fillStyle = '#000'; ctx.fill(); }
+    ctx.fillStyle = eyes;
+    if (blink) ctx.fillRect(exx - 0.05 * s, eyy - 0.008 * s, 0.1 * s, 0.025 * s);
+    else {
+      // slanted, narrow glowing eyes
+      ctx.beginPath();
+      const sl = side === 0 ? Math.sign(ex) : side;
+      ctx.moveTo(exx - 0.075 * s, eyy - 0.035 * s * sl);
+      ctx.quadraticCurveTo(exx, eyy - 0.08 * s, exx + 0.075 * s, eyy + 0.035 * s * sl);
+      ctx.quadraticCurveTo(exx, eyy + 0.07 * s, exx - 0.075 * s, eyy - 0.035 * s * sl);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(exx, eyy, 0.016 * s, 0, Math.PI * 2); ctx.fill();
+    }
   }
-  // eyes: big, dark, wet
-  const eyes = side === 0 ? [-0.12, 0.12] : side < 0 ? [-0.19, 0.02] : [-0.02, 0.19];
-  for (const ex of eyes) {
-    const exx = x + ex * s + fx * 0.6, eyy = hy + 0.03 * s;
-    // tired rings
-    ellipsePath(ctx, exx, eyy + 0.035 * s, 0.1 * s, 0.11 * s);
-    ctx.fillStyle = 'rgba(120,70,90,0.22)';
-    ctx.fill();
-    ellipsePath(ctx, exx, eyy, 0.085 * s, 0.105 * s);
-    const ge = ctx.createRadialGradient(exx - 0.02 * s, eyy - 0.03 * s, 0, exx, eyy, 0.1 * s);
-    ge.addColorStop(0, '#3a2a30'); ge.addColorStop(1, '#0a0506');
-    ctx.fillStyle = ge;
-    ctx.fill();
-    glint(ctx, exx + 0.03 * s, eyy - 0.04 * s, 0.028 * s);
-    glint(ctx, exx - 0.025 * s, eyy + 0.04 * s, 0.012 * s, 0.6);
+  if (has('flame')) {
+    // the hood's tip burns
+    const fx2 = x + tip * 0.52 * s + sway, fy2 = hy - 0.72 * s;
+    glow(ctx, fx2, fy2, 0.25 * s, '255,140,40', 0.6);
+    ctx.fillStyle = '#ff8a2a';
+    ctx.beginPath(); ctx.moveTo(fx2, fy2 - 0.22 * s); ctx.quadraticCurveTo(fx2 + 0.09 * s, fy2, fx2, fy2 + 0.03 * s); ctx.quadraticCurveTo(fx2 - 0.09 * s, fy2, fx2, fy2 - 0.22 * s); ctx.fill();
+    ctx.fillStyle = '#fff0a0';
+    ctx.beginPath(); ctx.moveTo(fx2, fy2 - 0.11 * s); ctx.quadraticCurveTo(fx2 + 0.04 * s, fy2, fx2, fy2 + 0.02 * s); ctx.quadraticCurveTo(fx2 - 0.04 * s, fy2, fx2, fy2 - 0.11 * s); ctx.fill();
   }
-  // worried brows
-  ctx.strokeStyle = '#2a1810';
-  ctx.lineWidth = s * 0.025;
-  for (const ex of eyes) {
-    const sx = Math.sign(ex) || 1;
-    const bx = x + ex * s + fx * 0.6;
-    ctx.beginPath();
-    ctx.moveTo(bx - 0.07 * s, hy - 0.1 * s + (sx > 0 ? 0.025 : -0.005) * s);
-    ctx.quadraticCurveTo(bx, hy - 0.13 * s, bx + 0.07 * s, hy - 0.1 * s + (sx > 0 ? -0.005 : 0.025) * s);
-    ctx.stroke();
-  }
-  // small unhappy mouth
-  ctx.strokeStyle = '#4a2018';
-  ctx.lineWidth = s * 0.022;
-  ctx.beginPath();
-  ctx.arc(x + fx * 0.8, hy + 0.23 * s, 0.045 * s, Math.PI * 1.2, Math.PI * 1.8);
-  ctx.stroke();
-  // hood rim over the forehead, with a lit edge
-  ctx.beginPath();
-  ctx.moveTo(x - 0.39 * s + fx, hy + 0.0 * s);
-  ctx.bezierCurveTo(x - 0.3 * s + fx, hy - 0.36 * s, x + 0.3 * s + fx, hy - 0.36 * s, x + 0.39 * s + fx, hy + 0.0 * s);
-  ctx.bezierCurveTo(x + 0.28 * s + fx, hy - 0.22 * s, x - 0.28 * s + fx, hy - 0.22 * s, x - 0.39 * s + fx, hy + 0.0 * s);
-  paint(ctx, s, volume(ctx, x + fx, hy - 0.2 * s, 0.35 * s, HOOD_L, HOOD, HOOD_D), 0.05);
-  ctx.strokeStyle = 'rgba(255,220,170,0.25)';
-  ctx.lineWidth = s * 0.015;
-  ctx.beginPath(); ctx.moveTo(x - 0.25 * s + fx, hy - 0.24 * s); ctx.quadraticCurveTo(x + fx, hy - 0.33 * s, x + 0.2 * s + fx, hy - 0.25 * s); ctx.stroke();
+  lantern();
+}
+
+function hexRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
 
 // --- Enemies -------------------------------------------------------------------
@@ -1434,4 +1493,154 @@ export function deepEye(ctx, x, y, s, t, { look = [0, 1], stare = 0 } = {}) {
     ctx.closePath();
     paint(ctx, s, '#e8dcc0', 0.02);
   }
+}
+
+// --- Projectile looks ---------------------------------------------------------------
+/**
+ * A player shot in one of several looks. (x, y) is the centre of the shot;
+ * its shadow falls 0.5 units lower. angle: flight direction on screen
+ * (radians). spin: 0..1 for things that turn.
+ */
+export function projectile(ctx, x, y, s, { skin = 'tear', color = '#9ad0ff', size = 0.15, angle = 0, spin = 0 } = {}) {
+  if (skin === 'tear') { tear(ctx, x, y, s, { color, size }); return; }
+  // tiny sprites: fills only, the pixel outline does the inking
+  const r = size * s * 1.25;
+  const pf = (fill) => { ctx.fillStyle = fill; ctx.fill(); };
+  shadow(ctx, x, y + 0.5 * s, s, size * 0.9, 0.3);
+  ctx.save();
+  ctx.translate(x, y);
+  if (skin === 'flame') {
+    ctx.rotate(angle);
+    glow(ctx, 0, 0, r * 2.4, '255,140,40', 0.5);
+    for (const [col, k] of [['#c8401a', 1], ['#ff8a2a', 0.72], ['#fff0a0', 0.4]]) {
+      ctx.beginPath();
+      ctx.moveTo(-r * 2.6 * k, Math.sin(spin * 6.28) * r * 0.3);
+      ctx.quadraticCurveTo(-r * 0.6, -r * 1.1 * k, r * 0.9 * k, -r * 0.2 * k);
+      ctx.arc(0, 0, r * k, -0.3, 0.3 + Math.PI * 0.6);
+      ctx.quadraticCurveTo(-r * 0.6, r * 1.1 * k, -r * 2.6 * k, Math.sin(spin * 6.28) * r * 0.3);
+      ctx.fillStyle = col;
+      ctx.fill();
+    }
+  } else if (skin === 'shard') {
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(r * 1.8, 0); ctx.lineTo(0, -r * 0.7); ctx.lineTo(-r * 1.6, 0); ctx.lineTo(0, r * 0.7); ctx.closePath();
+    pf(volume(ctx, 0, 0, r * 1.5, '#ffffff', '#8ad8f0', '#2a6a9a'));
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = s * 0.015;
+    ctx.beginPath(); ctx.moveTo(r * 1.4, 0); ctx.lineTo(-r * 1.2, 0); ctx.stroke();
+  } else if (skin === 'bubble') {
+    ellipsePath(ctx, 0, 0, r * 1.1, r * 1.1);
+    ctx.fillStyle = 'rgba(120,200,60,0.75)';
+    ctx.fill();
+    ellipsePath(ctx, 0, 0, r * 0.8, r * 0.8);
+    ctx.strokeStyle = 'rgba(30,70,10,0.6)'; ctx.lineWidth = s * 0.015; ctx.stroke();
+    glint(ctx, -r * 0.4, -r * 0.45, r * 0.32, 0.95);
+    glint(ctx, r * 0.35, r * 0.3, r * 0.14, 0.7);
+    ctx.fillStyle = 'rgba(160,230,90,0.85)';
+    ctx.beginPath(); ctx.arc(r * 1.2 * Math.cos(spin * 6.28), r * 1.2 * Math.sin(spin * 6.28), r * 0.22, 0, Math.PI * 2); ctx.fill();
+  } else if (skin === 'blade') {
+    ctx.rotate(spin * Math.PI * 2);
+    // a crescent blade: the outer rim of one circle, the inner rim of a shifted one
+    const R = r * 1.5, d = r * 1.0, h = Math.sqrt(R * R - (d * d) / 4);
+    const to = Math.atan2(h, d / 2), ti = Math.atan2(h, -d / 2);
+    ctx.beginPath();
+    ctx.arc(0, 0, R, to, Math.PI * 2 - to);
+    ctx.arc(d, 0, R, -ti, ti, true);
+    ctx.closePath();
+    pf(volume(ctx, 0, 0, R, '#ffffff', '#c8d0d8', '#5a6068'));
+    ctx.fillStyle = '#6a4a2a';
+    ctx.beginPath(); ctx.arc(r * 0.9, r * 0.9, r * 0.35, 0, Math.PI * 2); ctx.fill();
+  } else if (skin === 'bone') {
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.roundRect(-r * 1.4, -r * 0.28, r * 2.8, r * 0.56, r * 0.2);
+    pf('#ece0c4');
+    for (const ex of [-1.4, 1.4]) for (const ey of [-0.35, 0.35]) {
+      ellipsePath(ctx, ex * r, ey * r, r * 0.38, r * 0.38);
+      pf(volume(ctx, ex * r, ey * r, r * 0.4, '#fffbea', '#ece0c4', '#a89878'));
+    }
+  } else if (skin === 'skull') {
+    // a ghostly little skull with a wisp trailing behind
+    ctx.save();
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.4, -r * 0.8);
+    ctx.quadraticCurveTo(-r * 2, -r * 0.3 + Math.sin(spin * 6.28) * r * 0.4, -r * 2.8, Math.sin(spin * 6.28 + 1) * r * 0.5);
+    ctx.quadraticCurveTo(-r * 2, r * 0.4, -r * 0.4, r * 0.8);
+    ctx.fillStyle = 'rgba(150,220,255,0.55)';
+    ctx.fill();
+    ctx.restore();
+    glow(ctx, 0, 0, r * 2.2, '140,220,255', 0.45);
+    ellipsePath(ctx, 0, -r * 0.1, r * 0.95, r * 0.9);
+    pf(volume(ctx, 0, 0, r, '#ffffff', '#cfeaff', '#6a9ab8'));
+    ctx.fillStyle = '#1c2a3c';
+    for (const sx of [-1, 1]) { ellipsePath(ctx, sx * r * 0.36, -r * 0.1, r * 0.25, r * 0.3); ctx.fill(); }
+    ctx.fillRect(-r * 0.35, r * 0.45, r * 0.7, r * 0.18);
+  } else if (skin === 'star') {
+    ctx.rotate(spin * Math.PI * 2 / 5);
+    glow(ctx, 0, 0, r * 2.4, '255,240,150', 0.5);
+    ctx.beginPath();
+    for (let k = 0; k < 10; k++) {
+      const a = (k / 10) * Math.PI * 2 - Math.PI / 2, rr = k % 2 ? r * 0.6 : r * 1.5;
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    pf(volume(ctx, 0, 0, r * 1.5, '#ffffff', '#ffe060', '#c08010'));
+  } else if (skin === 'fly') {
+    ctx.rotate(angle);
+    const flap = Math.sin(spin * 6.28 * 3) * 0.5;
+    for (const sy of [-1, 1]) {
+      ctx.save();
+      ctx.rotate(sy * (1.2 + flap));
+      ellipsePath(ctx, r * 0.9, 0, r * 0.9, r * 0.4);
+      ctx.fillStyle = 'rgba(230,240,230,0.75)'; ctx.fill();
+      ctx.restore();
+    }
+    ellipsePath(ctx, 0, 0, r, r * 0.75);
+    pf(volume(ctx, 0, 0, r, '#6a6a50', '#2a2a1a', '#0a0a04'));
+    for (const sy of [-1, 1]) { ctx.fillStyle = '#e03030'; ctx.beginPath(); ctx.arc(r * 0.6, sy * r * 0.35, r * 0.28, 0, Math.PI * 2); ctx.fill(); }
+  } else if (skin === 'tar') {
+    ctx.beginPath();
+    ctx.moveTo(-r, 0);
+    ctx.arc(0, 0, r * 1.05, Math.PI, 0);
+    ctx.quadraticCurveTo(r * 0.9, r * 0.9, r * 0.1, r * 1.0);
+    ctx.quadraticCurveTo(-r * 0.2, r * 1.6 + spin * r * 0.4, -r * 0.35, r * 0.95);
+    ctx.quadraticCurveTo(-r * 1.0, r * 0.8, -r, 0);
+    pf(volume(ctx, 0, 0, r * 1.1, '#5a4a6a', '#1a1420', '#000000'));
+    glint(ctx, -r * 0.35, -r * 0.45, r * 0.28, 0.8);
+    ctx.fillStyle = 'rgba(160,110,200,0.6)';
+    ctx.beginPath(); ctx.arc(r * 0.45, -r * 0.2, r * 0.14, 0, Math.PI * 2); ctx.fill();
+  } else if (skin === 'bomb') {
+    ellipsePath(ctx, 0, 0, r * 1.05, r * 1.05);
+    pf(volume(ctx, 0, 0, r * 1.05, '#6a6a70', '#2a2a30', '#08080a'));
+    ctx.strokeStyle = '#ff8a2a'; ctx.lineWidth = s * 0.02;
+    ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.1); ctx.lineTo(-r * 0.1, r * 0.2); ctx.lineTo(r * 0.3, -r * 0.05); ctx.lineTo(r * 0.55, r * 0.35); ctx.stroke();
+    ctx.strokeStyle = '#5a4a3a'; ctx.lineWidth = Math.max(1, s * 0.02);
+    ctx.beginPath(); ctx.moveTo(r * 0.4, -r * 0.8); ctx.lineTo(r * 0.7, -r * 1.3); ctx.stroke();
+    glow(ctx, r * 0.7, -r * 1.35, r * 0.9, '255,200,80', 0.8);
+    ctx.fillStyle = spin < 0.5 ? '#fff0a0' : '#ff8a2a';
+    ctx.beginPath(); ctx.arc(r * 0.7, -r * 1.35, r * 0.25, 0, Math.PI * 2); ctx.fill();
+  } else if (skin === 'void') {
+    glow(ctx, 0, 0, r * 2.2, '160,80,255', 0.55);
+    ellipsePath(ctx, 0, 0, r * 1.1, r * 1.1);
+    pf(volume(ctx, 0, 0, r * 1.1, '#5a3a7a', '#1a0a2a', '#000000'));
+    ctx.strokeStyle = '#d8a0ff'; ctx.lineWidth = s * 0.025;
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 1.45, r * 0.45, spin * Math.PI, 0, Math.PI * 2); ctx.stroke();
+    glint(ctx, -r * 0.35, -r * 0.4, r * 0.2, 0.6);
+  }
+  ctx.restore();
+}
+
+/** A wall torch: iron bracket and a wrapped stick. The flame is drawn live. */
+export function torch(ctx, x, y, s) {
+  ink(ctx, s, 0.05);
+  ctx.beginPath(); ctx.moveTo(x - 0.12 * s, y + 0.18 * s); ctx.lineTo(x, y + 0.05 * s); ctx.lineTo(x + 0.12 * s, y + 0.18 * s); ctx.stroke();
+  ctx.strokeStyle = '#4a4648'; ctx.lineWidth = s * 0.03; ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 0.05 * s, y - 0.12 * s); ctx.lineTo(x + 0.05 * s, y - 0.12 * s); ctx.lineTo(x + 0.03 * s, y + 0.12 * s); ctx.lineTo(x - 0.03 * s, y + 0.12 * s); ctx.closePath();
+  paint(ctx, s, volume(ctx, x, y, 0.1 * s, '#8a6a48', '#5a3e28', '#2a1a10'), 0.035);
+  ctx.fillStyle = '#3a3638';
+  ctx.fillRect(x - 0.07 * s, y + 0.04 * s, 0.14 * s, 0.04 * s);
+  ctx.fillStyle = '#2a1a10';
+  ctx.fillRect(x - 0.06 * s, y - 0.16 * s, 0.12 * s, 0.05 * s);
 }

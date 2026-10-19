@@ -27,11 +27,19 @@ const BLOOD = {
   spider: [60, 40, 30], clot: [140, 10, 14], gaper: [130, 18, 20], host: [170, 160, 140], leaper: [140, 40, 30],
   boomfly: [150, 150, 40], wraith: [120, 130, 150], gorger: [90, 110, 60], hive: [170, 110, 50], bonelord: [170, 160, 140], deep: [110, 30, 80],
 };
+// Trail colour for each projectile look
+const SKIN_TRAIL = {
+  flame: '#ffb040', shard: '#cfeaff', bubble: '#9ad050', blade: '#e0e8f0', bone: '#ece0c4',
+  skull: '#9ad8ff', star: '#fff0a0', fly: '#6a6a50', tar: '#2a1a30', bomb: '#ff8a2a', void: '#a060ff',
+};
+const ROTATES = new Set(['flame', 'shard', 'bone', 'skull', 'fly']);
+// Items that show on the hero
+const COSTUME = { ember: 'flame', halo: 'halo', sulfur: 'horns', storm: 'crown', janus: 'mask', armor: 'bones' };
 const EL_HEX = { fire: '#ff8a3a', ice: '#8af0ff', poison: '#9ad050', blood: '#e04848' };
 
 // Frames per animation cycle: [period in seconds, frames]
 const CYCLE = {
-  heroWalk: [TAU / 12, 8], heroIdle: [TAU / 2.2, 4],
+  heroWalk: [TAU / 12, 8], heroIdle: [TAU / 2.2, 8],
   fly: [TAU / 7, 10], grub: [TAU / 5, 6], eye: [TAU / 2.5, 8], ram: [TAU / 8, 6],
   slime: [TAU / 6, 6], bloat: [TAU / 3, 6], coin: [TAU / 3, 8],
   spider: [TAU / 6, 4], spiderRun: [TAU / 30, 4], clot: [TAU / 4, 6], gaper: [TAU / 9, 6], gaperRun: [TAU / 14, 6],
@@ -113,6 +121,7 @@ export class Renderer {
     this.trail = [];
     this.builtDungeon = world.dungeon;
     if (fresh) {
+      this.look = null;
       this.deathT = 0;
       this.bossIntro = null;
       this.holdItem = null;
@@ -256,7 +265,14 @@ export class Renderer {
       const i = edge ? (rnd() < 0.5 ? 0 : W - 1) : Math.floor(rnd() * W);
       const j = edge ? Math.floor(rnd() * D) : (rnd() < 0.5 ? 0 : D - 1);
       if (!free(i, j) || nearDoor(i, j) || room.type !== 'normal' && room.type !== 'start' && rnd() < 0.5) continue;
-      const kind = ['skull', 'bone', 'candle', 'candle', 'urn', 'bone'][Math.floor(rnd() * 6)];
+      // each floor has its own clutter: cellar jars, catacomb candles, ossuary skulls
+      const pool = [
+        ['urn', 'urn', 'candle', 'bone', 'skull', 'candle'],
+        ['candle', 'candle', 'skull', 'bone', 'urn', 'skull'],
+        ['skulls', 'skull', 'bone', 'bone', 'candle', 'skulls'],
+        ['skulls', 'candle', 'bone', 'skull', 'candle', 'urn'],
+      ][world.floor % 4];
+      const kind = pool[Math.floor(rnd() * pool.length)];
       props.push([kind, i, j, k]);
       if (kind === 'candle') {
         candles.push(at(i, j));
@@ -269,12 +285,28 @@ export class Renderer {
     for (const [kind, i, j, v] of props) {
       const [x, y] = at(i, j);
       if (kind === 'rock') this.blitOn(g, this.sprite(`rock${v}`, (cc, px, py, ss) => S.rock(cc, px, py + 0.42 * ss, ss, v + 1), PX), x, y);
+      if (kind === 'skulls') {
+        for (const [dx, dy, sv] of [[-5, 2, 0], [5, 3, 2], [0, -3, 1]]) this.blitOn(g, this.sprite(`skull${sv}`, (cc, px, py, ss) => S.skull(cc, px, py, ss, (sv - 1) * 0.4), PX), x + dx, y + dy);
+      }
       if (kind === 'skull') this.blitOn(g, this.sprite(`skull${v % 3}`, (cc, px, py, ss) => S.skull(cc, px, py, ss, (v % 3 - 1) * 0.4), PX), x, y);
       if (kind === 'bone') this.blitOn(g, this.sprite(`bone${v % 3}`, (cc, px, py, ss) => S.bone(cc, px, py - 0.1 * ss, ss, v % 3), PX), x, y);
       if (kind === 'urn') this.blitOn(g, this.sprite(`urn${v % 2}`, (cc, px, py, ss) => S.urn(cc, px, py + 0.4 * ss, ss, v % 2), PX), x, y);
       if (kind === 'candle') this.blitOn(g, this.sprite(`candle${v % 3}`, (cc, px, py, ss) => S.candle(cc, px, py, ss, 0.3, v % 3 + 1), PX), x, y);
     }
-    light(g, ROOM_PW, ROOM_PH, 0.9, candles.map(([x, y]) => ({ x, y: y - 6, r: 46, k: 0.45 })), { steps: 6 });
+    // torches on the north wall, either side of the doorway
+    const torches = [];
+    if (rnd() < 0.75) {
+      for (const tx of [1.6, W - 1.6]) {
+        const x = WALL_SIDE + tx * PX, y = Math.round(WALL_TOP * 0.45);
+        this.blitOn(g, this.sprite('torch', (cc, px, py, ss) => S.torch(cc, px, py - 0.2 * ss, ss), PX, 0.6, 0.8), x, y);
+        torches.push([x, y]);
+        flames.push([x, y - 11, true]);
+      }
+    }
+    light(g, ROOM_PW, ROOM_PH, 0.9, [
+      ...candles.map(([x, y]) => ({ x, y: y - 6, r: 46, k: 0.45 })),
+      ...torches.map(([x, y]) => ({ x, y: y + 10, r: 70, k: 0.5 })),
+    ], { steps: 6 });
     return c;
   }
 
@@ -368,6 +400,7 @@ export class Renderer {
     }
     this.fx.drawUnder(g, dt);
     this.drawMotes(dt, ox, oy);
+    if (!tr) { this.drawCritters(w, dt, ox, oy, P); this.drawDrips(w, dt, ox, oy); }
 
     // everything that stands on the floor, sorted by depth
     const list = [];
@@ -398,15 +431,29 @@ export class Renderer {
       const [x, y] = P(wx, wz);
       list.push([y, () => this.blit(this.sprite(`wisp${wispCol}`, (cc, px, py, ss) => S.wisp(cc, px, py, ss, wispCol), PX, 1, 1.2), x, y)]);
     }
+    const baseSkin = w.stats.skin || 'tear';
     for (const s of w.shots) {
       const [x, y] = P(s.x, s.z);
       const col = shotColor(s.fx);
       const size = Math.round(s.r * 40) / 40;
-      // a faint trail behind each tear, embers behind burning ones
-      if (Math.random() < (s.big ? 1 : 0.5)) this.fx.add(x + (Math.random() - 0.5) * 2, y - 10 + (Math.random() - 0.5) * 2, 0, 0, col, { life: s.big ? 0.25 : 0.14, fade: true, size: s.big ? 2 : 1 });
-      if (s.fx && s.fx.fire && Math.random() < 0.3) this.fx.add(x, y - 10, (Math.random() - 0.5) * 10, 0, '#ffb040', { z: 0, vz: 25, life: 0.3, fade: true });
-      if (s.big || (s.fx && s.fx.fire)) this.lights.push({ x, y: y - 10, r: s.big ? 18 : 12, t: 0, life: 0.001, k: 0.6 });
-      list.push([y, () => this.blit(this.sprite(`tear${col}${size}`, (cc, px, py, ss) => S.tear(cc, px, py - 0.5 * ss, ss, { color: col, size }), PX, 1, 1.3), x, y)]);
+      const skin = s.big && w.stats.charge ? 'void' : baseSkin;
+      const trail = skin === 'tear' ? col : SKIN_TRAIL[skin];
+      // a faint trail behind each shot; some looks leave their own kind of trail
+      if (Math.random() < (s.big ? 1 : 0.5)) this.fx.add(x + (Math.random() - 0.5) * 2, y - 10 + (Math.random() - 0.5) * 2, 0, 0, trail, { life: s.big ? 0.25 : 0.14, fade: true, size: s.big ? 2 : 1 });
+      if (skin === 'star' && Math.random() < 0.35) this.fx.add(x + (Math.random() - 0.5) * 6, y - 10 + (Math.random() - 0.5) * 6, 0, 0, Math.random() < 0.5 ? '#ffffff' : '#ffe060', { life: 0.35, fade: true });
+      if (skin === 'tar' && Math.random() < 0.15) this.fx.add(x, y - 8, 0, 0, '#1a1420', { z: 0, g: 200, life: 0.3 });
+      if ((skin === 'bomb' || (s.fx && s.fx.fire)) && Math.random() < 0.3) this.fx.add(x, y - 10, (Math.random() - 0.5) * 10, 0, '#ffb040', { z: 0, vz: 25, life: 0.3, fade: true });
+      if (s.big || skin === 'flame' || skin === 'skull' || skin === 'star' || (s.fx && s.fx.fire)) this.lights.push({ x, y: y - 10, r: s.big ? 18 : 12, t: 0, life: 0.001, k: 0.6 });
+      let spr;
+      if (skin === 'tear') {
+        spr = this.sprite(`tear${col}${size}`, (cc, px, py, ss) => S.tear(cc, px, py - 0.5 * ss, ss, { color: col, size }), PX, 1, 1.3);
+      } else {
+        // 16 flight directions for things that point, 8 spin frames for things that turn
+        const ab = ROTATES.has(skin) ? Math.round(Math.atan2(-s.vz, s.vx) / (TAU / 16)) & 15 : 0;
+        const sf = Math.floor(((this.time * (skin === 'blade' ? 3 : 1.5) + s.t) % 1) * 8);
+        spr = this.sprite(`shot:${skin}:${size}:${ab}:${sf}`, (cc, px, py, ss) => S.projectile(cc, px, py - 0.5 * ss, ss, { skin, size, angle: (ab * TAU) / 16, spin: sf / 8 }), PX, 1.3, 1.5);
+      }
+      list.push([y, () => this.blit(spr, x, y)]);
     }
     for (const b of w.eshots) {
       const [x, y] = P(b.x, b.z);
@@ -437,14 +484,24 @@ export class Renderer {
   /** Live flicker on top of the baked candles. */
   drawCandles(room, ox, oy) {
     const g = this.g, t = this.time;
-    for (const [i, [x, y]] of (this.candles.get(room.key) || []).entries()) {
+    for (const [i, [x, y, big]] of (this.candles.get(room.key) || []).entries()) {
       const n = Math.sin(t * 13 + i * 7) + Math.sin(t * 23 + i * 3) * 0.5;
       const fx = Math.round(ox + x), fy = Math.round(oy + y);
       g.globalCompositeOperation = 'soft-light';
       g.globalAlpha = 0.55 + n * 0.15;
-      g.drawImage(this.smallGlow, fx - 16, fy - 13);
+      if (big) g.drawImage(this.lanternGlow, fx - 30, fy - 22, 60, 48);
+      else g.drawImage(this.smallGlow, fx - 16, fy - 13);
       g.globalAlpha = 1;
       g.globalCompositeOperation = 'source-over';
+      if (big) {
+        // torch: a wider, taller flame that throws sparks
+        const h = 5 + Math.round(n * 1.5);
+        g.fillStyle = '#c8401a'; g.fillRect(fx - 2, fy - h + 3, 5, h - 1);
+        g.fillStyle = '#ff9a2a'; g.fillRect(fx - 1, fy - h, 3, h);
+        g.fillStyle = '#fff4c0'; g.fillRect(fx, fy - 2, 1, 3);
+        if (Math.random() < 0.06) this.fx.add(fx, fy - h, (Math.random() - 0.5) * 8, 0, '#ffb040', { z: 0, vz: 18, life: 0.6, fade: true });
+        continue;
+      }
       const h = n > 0.6 ? 3 : n > -0.6 ? 2 : 1;
       g.fillStyle = '#ff9a2a'; g.fillRect(fx, fy - h, 1, h + 1);
       g.fillStyle = '#fff4c0'; g.fillRect(fx, fy, 1, 1);
@@ -469,6 +526,101 @@ export class Renderer {
       g.fillRect(Math.round(ox + m.x), Math.round(oy + m.y), 1, 1);
     }
     g.globalAlpha = 1;
+  }
+
+  /** Rats and roaches: harmless, they scurry about and flee into the walls. */
+  drawCritters(w, dt, ox, oy, P) {
+    const g = this.g, room = w.room;
+    const x0 = WALL_SIDE + 2, x1 = WALL_SIDE + W * PX - 2, y0 = WALL_TOP + 2, y1 = WALL_TOP + D * PX - 2;
+    if (this.critKey !== room.key) {
+      this.critKey = room.key;
+      this.critters = [];
+      const n = Math.floor(Math.random() * 3) + (room.type === 'normal' ? 1 : 0);
+      for (let k = 0; k < n; k++) {
+        const i = Math.floor(Math.random() * W), j = Math.floor(Math.random() * D);
+        if (room.tiles[tileIndex(i, j)]) continue;
+        this.critters.push({ x: WALL_SIDE + (i + 0.5) * PX, y: WALL_TOP + (D - j - 0.5) * PX, vx: 0, vy: 0, t: Math.random() * 2, kind: Math.random() < 0.5 ? 'rat' : 'roach', face: 1 });
+      }
+    }
+    const [hx, hy] = P(w.player.x, w.player.z);
+    const lx = hx - ox, ly = hy - oy;
+    for (const c of this.critters) {
+      if (c.gone) continue;
+      const dx = c.x - lx, dy = c.y - ly, d = Math.hypot(dx, dy) || 1;
+      const fast = c.kind === 'rat' ? 75 : 55;
+      if (d < 34 || c.flee) {
+        // run for the nearest wall, away from the hero
+        c.flee = true;
+        c.vx += ((dx / d) * fast - c.vx) * Math.min(1, dt * 8);
+        c.vy += ((dy / d) * fast - c.vy) * Math.min(1, dt * 8);
+      } else {
+        c.t -= dt;
+        if (c.t <= 0) {
+          if (c.vx || c.vy) { c.vx = c.vy = 0; c.t = 0.6 + Math.random() * 2; }
+          else { const a = Math.random() * TAU, sp = 15 + Math.random() * 20; c.vx = Math.cos(a) * sp; c.vy = Math.sin(a) * sp * 0.7; c.t = 0.2 + Math.random() * 0.5; }
+        }
+      }
+      c.x += c.vx * dt; c.y += c.vy * dt;
+      if (c.x < x0 || c.x > x1 || c.y < y0 || c.y > y1) {
+        if (c.flee) { c.gone = true; continue; }
+        c.x = Math.max(x0, Math.min(x1, c.x)); c.y = Math.max(y0, Math.min(y1, c.y)); c.vx = -c.vx; c.vy = -c.vy;
+      }
+      if (Math.abs(c.vx) > 1) c.face = Math.sign(c.vx);
+      const px = Math.round(ox + c.x), py = Math.round(oy + c.y), f = c.face;
+      const moving = Math.abs(c.vx) + Math.abs(c.vy) > 1;
+      const leg = moving && Math.floor(this.time * 20) % 2;
+      if (c.kind === 'roach') {
+        g.fillStyle = '#1a0e08';
+        g.fillRect(px - 2, py + (leg ? 0 : 1), 1, 1); g.fillRect(px + 1, py + (leg ? 1 : 0), 1, 1);
+        g.fillStyle = '#4a2a14'; g.fillRect(px - 1, py - 1, 3, 2);
+        g.fillStyle = '#6a3e1c'; g.fillRect(px - 1, py - 1, 2, 1);
+        g.fillStyle = '#1a0e08'; g.fillRect(px + (f > 0 ? 2 : -2), py - 1, 1, 1);
+      } else {
+        // tail, body, head, ear and a red eye
+        g.fillStyle = '#9a7060';
+        const wag = Math.round(Math.sin(this.time * 12) * 1);
+        g.fillRect(px - f * 4, py + wag, 1, 1); g.fillRect(px - f * 5, py + wag, 1, 1); g.fillRect(px - f * 6, py + wag * 2, 1, 1);
+        g.fillStyle = '#3a3230'; g.fillRect(px - 3, py - 1, 6, 3);
+        g.fillStyle = '#5e5450'; g.fillRect(px - 2, py - 2, 4, 1);
+        g.fillStyle = '#4a4240'; g.fillRect(px + f * 3 - (f < 0 ? 1 : 0), py - 1, 2, 2);
+        g.fillStyle = '#8a7a74'; g.fillRect(px + f * 2, py - 2, 1, 1);
+        g.fillStyle = '#e03030'; g.fillRect(px + f * 4 - (f < 0 ? 1 : 0), py - 1, 1, 1);
+        g.fillStyle = '#1a0e08';
+        if (leg) { g.fillRect(px - 2, py + 2, 1, 1); g.fillRect(px + 2, py + 2, 1, 1); } else { g.fillRect(px - 1, py + 2, 1, 1); g.fillRect(px + 1, py + 2, 1, 1); }
+      }
+    }
+  }
+
+  /** Water dripping from the ceiling along the north wall. */
+  drawDrips(w, dt, ox, oy) {
+    const g = this.g, room = w.room;
+    if (this.dripKey !== room.key) {
+      this.dripKey = room.key;
+      this.drips = [];
+      const n = 1 + Math.floor(Math.random() * 2);
+      for (let k = 0; k < n; k++) {
+        this.drips.push({ x: WALL_SIDE + 8 + Math.random() * (W * PX - 16), land: WALL_TOP + 6 + Math.random() * 30, t: Math.random() * 3, y: 0, v: 0, state: 'wait' });
+      }
+    }
+    for (const d of this.drips) {
+      d.t -= dt;
+      const px = Math.round(ox + d.x);
+      if (d.state === 'wait') {
+        if (d.t <= 0) { d.state = 'grow'; d.t = 0.6; }
+      } else if (d.state === 'grow') {
+        g.fillStyle = '#8ab0c8';
+        g.fillRect(px, Math.round(oy + WALL_TOP - 3), 1, d.t < 0.3 ? 2 : 1);
+        if (d.t <= 0) { d.state = 'fall'; d.y = WALL_TOP - 2; d.v = 0; }
+      } else if (d.state === 'fall') {
+        d.v += 400 * dt; d.y += d.v * dt;
+        g.fillStyle = '#a8cce0';
+        g.fillRect(px, Math.round(oy + d.y) - 1, 1, 2);
+        if (d.y >= d.land) {
+          this.fx.splash(px, oy + d.land, '#8ab0c8');
+          d.state = 'wait'; d.t = 2 + Math.random() * 4;
+        }
+      }
+    }
   }
 
   /** Dash afterimages, fading out. */
@@ -520,6 +672,17 @@ export class Renderer {
     this.g.drawImage(c, Math.round(x - spr.ax * sx), Math.round(y - spr.ay * sy), w, h);
   }
 
+  /** Eye colour and costume pieces from the items you carry. */
+  heroLook(w) {
+    const n = w.items.length;
+    if (this.look && this.look.n === n) return this.look;
+    const s = w.stats;
+    const costume = [...new Set(w.items.map((id) => COSTUME[id]).filter(Boolean))].sort();
+    const eyes = s.fire ? '#ff8a3a' : s.ice ? '#8af0ff' : s.poison ? '#9ad050' : s.spectral || s.orbitals ? '#c080ff' : '#ffd27a';
+    this.look = { n, eyes, costume, key: `${eyes}:${costume.join(',')}` };
+    return this.look;
+  }
+
   drawHero(w, x, y, t) {
     const p = w.player;
     if (p.iframes > 0 && Math.floor(t * 14) % 2 === 0 && w.state === 'play') return;
@@ -530,8 +693,10 @@ export class Renderer {
     if (!dx && !dz) dz = -1;
     const facing = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 'right' : 'left') : (dz > 0 ? 'up' : 'down');
     const [k, ft] = frame(moving ? 'heroWalk' : 'heroIdle', t);
-    const key = `hero:${facing}:${moving ? 'w' : 'i'}${k}`;
-    const spr = this.sprite(key, (cc, px, py, ss) => S.hero(cc, px, py, ss, ft, { facing, moving }), PX * 1.45, 1.9, 2.0);
+    const look = this.heroLook(w);
+    const blink = !moving && k === 7;
+    const key = `hero:${facing}:${moving ? 'w' : 'i'}${k}:${look.key}`;
+    const spr = this.sprite(key, (cc, px, py, ss) => S.hero(cc, px, py, ss, ft, { facing, moving, eyes: look.eyes, costume: look.costume, blink }), PX * 1.45, 1.9, 2.2);
     const dashing = p.dashT > 0;
     if (dashing) {
       this.trail.push({ spr: this.tinted(key, spr, '#7ab8ff', 0.6), x, y, t: 0 });
@@ -725,6 +890,7 @@ export class Renderer {
   // ======================================================================
   consumeEvents(w, P) {
     const fx = this.fx;
+    const seen = new Set();
     for (const e of w.events) {
       if (e.type === 'kill') {
         const [x, y] = P(e.x, e.z);
@@ -771,6 +937,14 @@ export class Renderer {
         fx.burst(x, y, '#4a3a2a', Math.round(10 + e.r * 8), 1.6, 2);
       } else if (e.type === 'zap') {
         fx.zap(e.pts.map(([x, z]) => P(x, z)));
+      } else if (e.type === 'eshoot') {
+        // a spit of blood where an enemy fires; once per spot per frame
+        const key = `${Math.round(e.x * 4)}:${Math.round(e.z * 4)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const [x, y] = P(e.x, e.z);
+        fx.burst(x, y - 12, '#c01818', 3, 0.6, 3);
+        fx.ring(x, y - 12, 6, '#ff5040', 0.12);
       } else if (e.type === 'clink') {
         const [x, y] = P(e.x, e.z);
         fx.burst(x, y - 10, '#fff8e0', 4, 0.7, 3);
@@ -870,7 +1044,8 @@ export class Renderer {
     const slide = 1 - Math.pow(1 - u, 3);
     const floor = cy + 40;
     // hero from the left
-    const hero = this.sprite('intro:hero', (cc, px, py, ss) => S.hero(cc, px, py, ss, 0, { facing: 'right' }), PX * 2.2, 1.9, 2.0);
+    const look = this.heroLook(w);
+    const hero = this.sprite(`intro:hero:${look.key}`, (cc, px, py, ss) => S.hero(cc, px, py, ss, 0, { facing: 'right', eyes: look.eyes, costume: look.costume }), PX * 2.2, 1.9, 2.2);
     this.blit(hero, Math.round(-30 + slide * (VW * 0.22 + 30)), floor);
     // boss from the right, scaled down if it would not fit the band
     const r = this.enemySprite(w, { type: bi.type, phase: 0, x: 0, z: 0 }, this.time);

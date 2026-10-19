@@ -240,7 +240,7 @@ export class World {
 
   shotEffects() {
     const s = this.stats;
-    return { fire: s.fire, ice: s.ice, poison: s.poison, blood: s.crit >= 0.2 ? 1 : 0 };
+    return { fire: s.fire, ice: s.ice, poison: s.poison, blood: s.crit >= 0.2 ? 1 : 0, tar: s.tar ? 1 : 0 };
   }
 
   firePlayer(angle) {
@@ -461,6 +461,7 @@ export class World {
   /** Enemy projectile. opts.home makes it steer towards the player. */
   enemyShot(x, z, angle, speed, dmg = 1, opts = {}) {
     speed *= Cfg.ENEMY_PACE;
+    this.events.push({ type: 'eshoot', x, z });
     this.eshots.push({ x, z, vx: Math.cos(angle) * speed, vz: Math.sin(angle) * speed, r: 0.15, life: opts.life || 5, dmg, home: opts.home || 0 });
   }
 
@@ -521,6 +522,7 @@ export class World {
     if (fx) {
       if (fx.fire && this.rand() < fx.fire) e.burn = 3;
       if (fx.poison && this.rand() < fx.poison) e.poison = 4;
+      if (fx.tar) e.chill = Math.max(e.chill, Math.min(0.9, e.chill + 0.3));
       if (fx.ice && this.rand() < fx.ice) {
         e.chill += 0.34;
         if (e.chill >= 1 && !e.boss) { e.frozen = 1.6; e.chill = 0; }
@@ -631,7 +633,7 @@ export class World {
         sh.hit.clear();
         sh.left = 30;
       }
-      const blocked = !sh.back && (Math.abs(sh.x) > HW || Math.abs(sh.z) > HD || this.solid(toTileI(sh.x), toTileJ(sh.z)));
+      const blocked = !sh.back && (Math.abs(sh.x) > HW || Math.abs(sh.z) > HD || (!s.spectral && this.solid(toTileI(sh.x), toTileJ(sh.z))));
       if (blocked && sh.bounce > 0) {
         // bounce: back up and flip the axis that hit
         sh.x -= vx * dt; sh.z -= vz * dt;

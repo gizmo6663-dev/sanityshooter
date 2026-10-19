@@ -4,7 +4,7 @@
 // in dithered steps. Upscaled with nearest-neighbour this reads as pixel art.
 
 // A muted palette in ramps: darks, browns, warm stone, blood, skin, moss,
-// gold, cold blues, a little purple.
+// gold, cold blues, a little purple, slate for the hero's cloak.
 const HEX = [
   '0d0705', '1a0e09', '2a1810',
   '3a2416', '4e321f', '63412a', '7a5236', '93673f', 'ad7f52', 'c49a6a',
@@ -15,6 +15,7 @@ const HEX = [
   '6a4210', 'a0661a', 'd89a2a', 'f6c84a', 'fff0a8',
   '1c2a3c', '2f4e6e', '4e82aa', '86bce0', 'cfeaff',
   '3a2238', '5e3a5a', 'ffffff',
+  '17161f', '2a2838', '42405a', '625f7c', '8c89a6',
 ];
 export const PALETTE = HEX.map((h) => [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]);
 

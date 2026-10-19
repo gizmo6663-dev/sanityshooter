@@ -38,12 +38,19 @@ oppdatering over den gamle.
 
 ### Gjenstander og synergier
 
-Det finnes 36 passive gjenstander. Noen øker egenskapene dine (skade,
+Det finnes 40 passive gjenstander. Noen øker egenskapene dine (skade,
 skuddtakt, fart, rekkevidde, liv). Andre endrer hvordan skuddene gjør skade:
 de kan sprette av vegger, komme tilbake som bumerang, vokse mens de flyr,
 sende lyn videre, slå fiender bakover eller få døde fiender til å sprekke i
 skudd. Hvert femte skudd kan være et ladet kjempeskudd. De virker sammen
 gjennom noen felles regler:
+
+- Mange gjenstander endrer **hvordan skuddene ser ut**: flammer, isskår,
+  giftbobler, bein, bomber, sigdblad, spøkelseshodeskaller, stjerner, fluer
+  eller tjære. Den siste du plukket opp bestemmer utseendet.
+- Noen gjenstander synes også **på helten**: glorie, horn, krone, maske,
+  beinrustning eller en brennende hette. Øynene skifter farge etter
+  skuddenes element.
 
 - Skudd kan ha **elementer**: ild (brenner), is (bremser og fryser fast),
   gift (skader over tid, giftsky når fienden dør).
