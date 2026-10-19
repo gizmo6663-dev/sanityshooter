@@ -1,104 +1,42 @@
-// Three.js renderer. Reads a World every frame and draws it; never changes
-// game state. Sim (x, z) maps to three.js (x, 0, -z). The models themselves
-// live in models.js.
+// Three.js renderer. Reads the World every frame and draws it; never changes
+// game state. Room-local sim positions (x, z) become three.js
+// (roomX + x, y, roomZ - z).
 
 import * as THREE from 'three';
 import { Cfg } from './config.js';
 import {
-  RIG, mobGeometries, hordeGeometry, buildCannon, buildPlayerWall, buildCastle, buildTurret,
-  buildEnvironment, waveFlag, stripeTexture, Batch, vcMat, mat, seeded,
+  buildHero, buildEnemy, buildRoom, buildDoorLeaf, buildPedestal, buildTrapdoor,
+  heartGeometry, iconTexture, glowTexture, bloodTexture,
 } from './models.js';
+import { ITEMS } from './items.js';
 
-const COL = {
-  blue: 0x2f7dff,
-  giant: 0xffc02e,
-  red: 0xff3434,
-  gold: 0xffc23d,
-};
-
-const GATE_COLORS = { 2: '#33b4ff', 3: '#a64dff', 4: '#ff4fd8' };
-const gateColor = (g) => (g.kind === 'add' ? '#2fe07a' : g.kind === 'div' ? '#ff3030' : GATE_COLORS[g.value] || '#ffbf1f');
-const gateText = (g) => (g.kind === 'add' ? `+${g.value}` : g.kind === 'div' ? `÷${g.value}` : `×${g.value}`);
-
-// Element colours: 1 fire, 2 ice, 3 poison
-const EL_BODY = [0x2f7dff, 0xff7a1a, 0x5fd0ff, 0x4fd14a];
-const EL_FX = [0xffb347, 0xff6a1a, 0x8fe8ff, 0x6fe36a];
-const RED_KIND = { unit: 0xff3434, runner: 0xff7a3a, shield: 0xd62f3a, bomber: 0x9b2335, brute: 0xb3122e, boss: 0x7a0a1e };
-const RED_SCALE = { unit: 1.6, runner: 1.3, shield: 1.75, bomber: 1.7, brute: 3.4, boss: 6.2 };
-const tmpC2 = new THREE.Color();
-const BURN = new THREE.Color(0xffa020), FROST = new THREE.Color(0xa8ecff), VENOM = new THREE.Color(0x8ad04a), WHITE = new THREE.Color(0xffffff);
-const CONFETTI = [0xff3b6b, 0xffc23d, 0x3fd2ff, 0x5ce65c, 0xb36bff, 0xffffff];
-
-const MAX_PARTICLES = 1000;
-const MAX_GIANTS = 24;
-const HORDE = 520;
+const G = Cfg.GRID;
+const MAX_PARTICLES = 700;
 const tmpM = new THREE.Matrix4();
-const tmpL = new THREE.Matrix4();
-const tmpO = new THREE.Matrix4();
 const tmpQ = new THREE.Quaternion();
-const MAX_BLUE_DRAW = 900;
 const tmpP = new THREE.Vector3();
 const tmpS = new THREE.Vector3();
 const tmpE = new THREE.Euler();
 const tmpC = new THREE.Color();
+const tmpC2 = new THREE.Color();
+const WHITE = new THREE.Color(0xffffff);
 
-// Text drawn onto a canvas, used for gate labels, hp tags and floaters.
-function makeLabel(w, h) {
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return { canvas, ctx: canvas.getContext('2d'), tex, text: null };
+const FX_COL = { fire: new THREE.Color(0xff7a2a), ice: new THREE.Color(0x8fdcff), poison: new THREE.Color(0x8fd04a) };
+const SOUL = new THREE.Color(0xcfe8ff);
+const BLOOD = { fly: 0x3a2a10, grub: 0x8a7a3a, slime: 0x4a6a1a, eye: 0x6a0808, ram: 0x8a8070, bloat: 0x5a0606 };
+
+function shotColor(fx, out) {
+  let n = 0;
+  out.setRGB(0, 0, 0);
+  for (const k of ['fire', 'ice', 'poison']) if (fx && fx[k] > 0) { out.add(FX_COL[k]); n++; }
+  if (!n) return out.copy(SOUL);
+  return out.multiplyScalar(1 / n);
 }
 
-function drawLabel(label, text, opts = {}) {
-  if (label.text === text && !opts.force) return;
-  label.text = text;
-  const { canvas, ctx } = label;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (opts.bar !== undefined) {
-    // HP bar under the number
-    const bw = canvas.width * 0.86, bh = canvas.height * 0.2;
-    const bx = (canvas.width - bw) / 2, by = canvas.height * 0.72;
-    ctx.fillStyle = 'rgba(40,0,10,0.85)';
-    roundRect(ctx, bx - 4, by - 4, bw + 8, bh + 8, 10); ctx.fill();
-    const grad = ctx.createLinearGradient(0, by, 0, by + bh);
-    grad.addColorStop(0, '#ff7a6b');
-    grad.addColorStop(1, '#d81e2c');
-    ctx.fillStyle = grad;
-    roundRect(ctx, bx, by, Math.max(bh, bw * opts.bar), bh, 7); ctx.fill();
-  }
-  const size = opts.size || canvas.height * 0.62;
-  ctx.font = `900 ${size}px "Arial Black", "Segoe UI", system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const y = opts.bar !== undefined ? canvas.height * 0.36 : canvas.height * 0.52;
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = size * 0.16;
-  ctx.strokeStyle = opts.stroke || '#1b1033';
-  ctx.strokeText(text, canvas.width / 2, y);
-  ctx.fillStyle = opts.color || '#ffffff';
-  ctx.fillText(text, canvas.width / 2, y);
-  label.tex.needsUpdate = true;
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function instanced(geo, material, count, { color = false, shadow = false } = {}) {
+function instanced(geo, material, count, color = false) {
   const im = new THREE.InstancedMesh(geo, material, count);
   im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   im.frustumCulled = false;
-  im.castShadow = shadow;
   if (color) im.setColorAt(0, tmpC.set(0xffffff));
   im.count = 0;
   return im;
@@ -106,57 +44,39 @@ function instanced(geo, material, count, { color = false, shadow = false } = {})
 
 export class Renderer {
   constructor(container) {
-    this.container = container;
     const r = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = 1.05;
+    r.toneMappingExposure = 1.0;
     r.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(r.domElement);
     this.renderer = r;
 
     this.scene = new THREE.Scene();
-    this.scene.background = this.skyTexture();
-    this.scene.fog = new THREE.Fog(0xf7dcb0, 90, 190);
-
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 400);
-    this.camBase = new THREE.Vector3(0, 19, 6.5);
-    this.camLook = new THREE.Vector3(0, 0, -19);
+    this.scene.background = new THREE.Color(0x040303);
+    this.scene.fog = new THREE.Fog(0x040303, 26, 50);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.5, 200);
+    this.camOffset = new THREE.Vector3(0, 17, 6.2);
+    this.camPos = new THREE.Vector3();
 
     this.buildLights();
-    this.env = buildEnvironment(this.scene);
-    this.buildCannon();
-    this.buildBase();
-    this.buildMobs();
-    this.buildHorde();
-    this.buildParticles();
-    this.buildFx();
+    this.glowTex = glowTexture();
+    this.hero = buildHero();
+    this.scene.add(this.hero.root);
+    this.buildDynamic();
 
-    this.gateObjs = [];
-    this.tags = [];          // hp tags over giants / brutes
-    this.floaters = [];
+    this.rooms = new Map();      // roomKey -> { group, leaves, candles, decals }
+    this.enemyModels = new Map();
+    this.pickupModels = new Map();
+    this.parts = [];
+    this.rings = [];
     this.world = null;
+    this.builtFloor = -1;
     this.time = 0;
-
     this.resize();
     window.addEventListener('resize', () => this.resize());
-  }
-
-  skyTexture() {
-    const c = document.createElement('canvas');
-    c.width = 4; c.height = 256;
-    const g = c.getContext('2d');
-    const grad = g.createLinearGradient(0, 0, 0, 256);
-    grad.addColorStop(0, '#3fa8ff');
-    grad.addColorStop(0.55, '#a9dcff');
-    grad.addColorStop(1, '#ffe4b8');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 4, 256);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
   }
 
   resize() {
@@ -164,223 +84,121 @@ export class Renderer {
     this.renderer.setSize(w, h);
     const aspect = w / h;
     this.camera.aspect = aspect;
-    // Keep the lane filling the width whatever the phone's shape.
-    const hfov = 60 * Math.PI / 180;
+    // Fit the room's width (plus walls) whatever the phone's shape.
+    const dist = this.camOffset.length();
+    const hfov = 2 * Math.atan((Cfg.ROOM_W + 2.6) / 2 / dist);
     const vfov = 2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180 / Math.PI;
-    this.camera.fov = Math.min(78, Math.max(45, vfov));
+    this.camera.fov = Math.min(80, Math.max(40, vfov));
     this.camera.updateProjectionMatrix();
   }
 
   buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xcfeaff, 0xe8b57a, 1.2));
-    const sun = new THREE.DirectionalLight(0xfff1dc, 2.5);
-    sun.position.set(10, 26, 4);
-    sun.target.position.set(0, 0, -24);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const sc = sun.shadow.camera;
-    sc.left = -24; sc.right = 24; sc.top = 42; sc.bottom = -42; sc.near = 1; sc.far = 95;
-    sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.03;
-    this.scene.add(sun, sun.target);
+    this.scene.add(new THREE.AmbientLight(0x5a5a78, 1.1));
+    this.scene.add(new THREE.HemisphereLight(0x8c9cc0, 0x2a1810, 0.9));
+    const moon = new THREE.DirectionalLight(0xb0c0e8, 1.3);
+    moon.castShadow = true;
+    moon.shadow.mapSize.set(1024, 1024);
+    const sc = moon.shadow.camera;
+    sc.left = -9; sc.right = 9; sc.top = 11; sc.bottom = -11; sc.near = 1; sc.far = 40;
+    moon.shadow.bias = -0.0008;
+    moon.shadow.normalBias = 0.02;
+    this.scene.add(moon, moon.target);
+    this.moon = moon;
+    // The hero's lantern
+    this.lantern = new THREE.PointLight(0xffb070, 18, 11, 1.5);
+    this.scene.add(this.lantern);
+    // Two candle lights, moved to the current room's candles
+    this.candleLights = [0, 1].map(() => {
+      const l = new THREE.PointLight(0xff9a4a, 5, 6, 1.8);
+      this.scene.add(l);
+      return l;
+    });
   }
 
-  buildCannon() {
-    const c = buildCannon();
-    c.root.position.set(0, 0.2, -Cfg.CANNON_Z + 0.6);
-    c.root.scale.setScalar(0.85);
-    c.root.traverse((o) => { if (o.isMesh && o !== c.flash) o.castShadow = true; });
-    this.scene.add(c.root);
-    this.cannon = c.root;
-    this.barrel = c.barrel;
-    this.flash = c.flash;
-
-    const wall = buildPlayerWall();
-    this.scene.add(wall.group);
-    this.wallMats = wall.mats;
-  }
-
-  buildBase() {
-    const L = Cfg.LANE_LEN;
-    const c = buildCastle();
-    c.group.position.set(0, 0.2, -L);
-    this.scene.add(c.group);
-    this.base = c.group;
-    this.baseMats = c.mats;
-    this.torches = c.flames;
-    this.banners = c.banners;
-    this.flags = c.flags;
-
-    // HP sign floating above the base
-    this.baseLabel = makeLabel(512, 200);
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.baseLabel.tex, depthTest: false, transparent: true }));
-    sprite.scale.set(9, 3.5, 1);
-    sprite.position.set(0, 11.0, -L - 1);
-    sprite.renderOrder = 10;
-    this.scene.add(sprite);
-    this.baseSprite = sprite;
-  }
-
-  buildMobs() {
-    const g = mobGeometries();
-    const n = MAX_BLUE_DRAW + Cfg.MAX_RED + 8;
-    const tinted = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05 });
-    const shiny = vcMat({ roughness: 0.2, metalness: 0.1 });
-    const metal = vcMat({ roughness: 0.35, metalness: 0.45 });
-    this.mob = {
-      body: instanced(g.body, tinted, n, { color: true, shadow: true }),
-      legs: instanced(g.leg, tinted, n * 2, { color: true, shadow: true }),
-      arms: instanced(g.arm, tinted, n * 2, { color: true }),
-      eyes: instanced(g.eyes, shiny, n),
-      pupils: instanced(g.pupils, shiny, n),
-      brows: instanced(g.brows, vcMat(), Cfg.MAX_RED + 8),
-      hat: instanced(g.hat, vcMat({ roughness: 0.5, side: THREE.DoubleSide }), Cfg.MAX_BLUE + 8),
-      helmet: instanced(g.helmet, metal, Cfg.MAX_RED + 8),
-      crown: instanced(g.crown, vcMat({ roughness: 0.25, metalness: 0.7 }), MAX_GIANTS),
-      board: instanced(g.board, vcMat({ roughness: 0.7 }), Cfg.MAX_RED + 8),
-      bomb: instanced(g.bomb, vcMat({ roughness: 0.3, metalness: 0.3 }), Cfg.MAX_RED + 8),
-      bubble: instanced(g.bubble, new THREE.MeshStandardMaterial({
-        color: 0x8fe0ff, emissive: 0x2fa8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.28, depthWrite: false,
-      }), 900),
-    };
-    for (const im of Object.values(this.mob)) this.scene.add(im);
-  }
-
-  buildHorde() {
-    // The red sea waiting behind the base, like in the ads.
-    const L = Cfg.LANE_LEN, H = Cfg.LANE_HALF;
-    const im = new THREE.InstancedMesh(hordeGeometry(), vcMat({ roughness: 0.45 }), HORDE);
-    const rnd = seeded(4242);
-    this.hordeSlots = [];
-    for (let i = 0; i < HORDE; i++) {
-      this.hordeSlots.push({
-        x: (rnd() - 0.5) * (H * 2 + 8),
-        z: -(L + 4.5 + rnd() * 34),
-        s: 1.5 + rnd() * 0.4,
-        ph: rnd() * Math.PI * 2,
-        yaw: (rnd() - 0.5) * 0.6,
-      });
-    }
-    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    im.frustumCulled = false;
-    this.horde = im;
-    this.scene.add(im);
-  }
-
-  buildFx() {
-    // Expanding rings for explosions and stomps
-    const ringGeo = new THREE.TorusGeometry(1, 0.07, 4, 36);
-    ringGeo.rotateX(Math.PI / 2);
+  buildDynamic() {
     const add = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
-    this.ringMesh = instanced(ringGeo, new THREE.MeshBasicMaterial(add), 160, { color: true });
-    this.rings = [];
-    // Catapult target markers and the rocks themselves
-    const markGeo = new THREE.RingGeometry(0.8, 1, 32);
-    markGeo.rotateX(-Math.PI / 2);
-    this.markMesh = instanced(markGeo, new THREE.MeshBasicMaterial({ color: 0xff2a2a, ...add, side: THREE.DoubleSide }), 8);
-    this.rockMesh = instanced(new THREE.DodecahedronGeometry(0.5, 0), new THREE.MeshStandardMaterial({ color: 0x8a6a4a, roughness: 0.9, flatShading: true }), 8, { shadow: true });
-    // Poison clouds
-    this.cloudMesh = instanced(new THREE.SphereGeometry(1, 14, 8), new THREE.MeshStandardMaterial({
-      color: 0x7bea5a, emissive: 0x3fbf2a, emissiveIntensity: 0.5, transparent: true, opacity: 0.35, depthWrite: false,
-    }), Cfg.MAX_CLOUDS);
-    // Turret shots
-    this.shotMesh = instanced(new THREE.SphereGeometry(0.16, 8, 6), new THREE.MeshBasicMaterial(), 80, { color: true });
-    for (const im of [this.ringMesh, this.markMesh, this.rockMesh, this.cloudMesh, this.shotMesh]) this.scene.add(im);
-    this.turrets = [];
-  }
+    // player shots: bright core + soft glow
+    this.shotCore = instanced(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial(), 300, true);
+    this.shotGlow = instanced(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ ...add, opacity: 0.35 }), 300, true);
+    // enemy shots: dark blood with a red halo
+    this.eshotCore = instanced(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshStandardMaterial({ color: 0x5a0606, roughness: 0.2, emissive: 0x3a0000 }), 200);
+    this.eshotGlow = instanced(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2a1a, ...add, opacity: 0.3 }), 200);
+    // xp orbs
+    this.orbMesh = instanced(new THREE.OctahedronGeometry(0.09), new THREE.MeshBasicMaterial({ color: 0x7affc8 }), 200);
+    // orbiting wisps
+    this.wispMesh = instanced(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffd08a }), 8, true);
+    this.wispGlow = instanced(new THREE.SphereGeometry(0.4, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff9a3a, ...add, opacity: 0.3 }), 8, true);
+    // particles
+    this.partMesh = instanced(new THREE.BoxGeometry(0.08, 0.08, 0.08), new THREE.MeshStandardMaterial({ roughness: 0.5 }), MAX_PARTICLES, true);
+    // rings for explosions / slams
+    const ringGeo = new THREE.TorusGeometry(1, 0.06, 4, 32);
+    ringGeo.rotateX(Math.PI / 2);
+    this.ringMesh = instanced(ringGeo, new THREE.MeshBasicMaterial(add), 40, true);
+    this.flashMesh = instanced(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ ...add, opacity: 0.5 }), 40, true);
+    // poison clouds
+    this.cloudMesh = instanced(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshStandardMaterial({ color: 0x6a8a2a, transparent: true, opacity: 0.35, depthWrite: false, emissive: 0x2a3a08 }), 40);
+    // candle flames
+    this.flameMesh = instanced(new THREE.ConeGeometry(0.05, 0.16, 6), new THREE.MeshBasicMaterial({ color: 0xffb050 }), 64);
+    this.flameGlow = instanced(new THREE.SphereGeometry(0.28, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff7a1a, ...add, opacity: 0.18 }), 64);
+    // shadow blob under flying things
+    this.blobMesh = instanced(new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45, depthWrite: false }), 64);
+    for (const im of [this.shotCore, this.shotGlow, this.eshotCore, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow,
+      this.partMesh, this.ringMesh, this.flashMesh, this.cloudMesh, this.flameMesh, this.flameGlow, this.blobMesh]) this.scene.add(im);
 
-  buildParticles() {
-    const geo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
-    this.partMesh = instanced(geo, new THREE.MeshStandardMaterial({ roughness: 0.4 }), MAX_PARTICLES, { color: true });
-    this.scene.add(this.partMesh);
-    this.parts = [];
+    this.heartGeo = heartGeometry();
+    this.heartMat = new THREE.MeshStandardMaterial({ color: 0xa8141c, roughness: 0.3, emissive: 0x300000 });
+    this.coinGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.04, 14).rotateX(Math.PI / 2);
+    this.coinMat = new THREE.MeshStandardMaterial({ color: 0xc89a3a, roughness: 0.3, metalness: 0.8, emissive: 0x2a1a00 });
+    this.decalGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    this.decalMats = {};
   }
 
   // ======================================================================
-  // Per-world setup
+  // Floor setup
   // ======================================================================
+  roomOrigin(room) {
+    return [(room.gx - (G - 1) / 2) * Cfg.ROOM_STRIDE_X, -(room.gy - (G - 1) / 2) * Cfg.ROOM_STRIDE_Z];
+  }
+
+  buildFloor(world) {
+    for (const r of this.rooms.values()) {
+      this.scene.remove(r.group);
+      r.group.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); } });
+    }
+    this.rooms.clear();
+    for (const m of this.pickupModels.values()) m.parent && m.parent.remove(m);
+    this.pickupModels.clear();
+    for (const room of world.dungeon.rooms.values()) {
+      const built = buildRoom(room, world.floor);
+      const [ox, oz] = this.roomOrigin(room);
+      built.group.position.set(ox, 0, oz);
+      const leaves = [];
+      for (const [dir, d] of Object.entries(built.doors)) {
+        const other = world.dungeon.rooms.get(world.neighbourKey(room, dir));
+        const type = room.type === 'boss' || other.type === 'boss' ? 'boss' : other.type === 'treasure' || room.type === 'treasure' ? 'treasure' : 'normal';
+        const leaf = buildDoorLeaf(type);
+        leaf.position.set(d.px, 0, -d.pz);
+        leaf.rotation.y = d.ry;
+        built.group.add(leaf);
+        leaves.push(leaf);
+      }
+      built.group.visible = false;
+      this.scene.add(built.group);
+      this.rooms.set(room.key, { ...built, leaves, decals: [], origin: [ox, oz], room });
+    }
+    this.builtFloor = world.floor;
+    this.builtDungeon = world.dungeon;
+    const start = this.rooms.get(world.roomKey);
+    this.camPos.set(start.origin[0], 0, start.origin[1]);
+  }
+
   setWorld(world) {
     this.world = world;
-    for (const o of this.gateObjs) {
-      this.scene.remove(o.group);
-      o.group.traverse((c) => {
-        if (!c.isMesh) return;
-        c.geometry.dispose();
-        if (c.material.map) c.material.map.dispose();
-        c.material.dispose();
-      });
-    }
-    this.gateObjs = world.gates.map((g) => this.makeGate(g));
-    for (const t of this.tags) this.scene.remove(t.sprite);
-    this.tags = [];
-    for (const f of this.floaters) this.scene.remove(f.sprite);
-    this.floaters = [];
+    for (const m of this.enemyModels.values()) this.scene.remove(m.root);
+    this.enemyModels.clear();
     this.parts = [];
     this.rings = [];
-    this.lastBaseText = null;
-    this.celebrated = false;
-    // Wall turrets from items
-    for (const t of this.turrets) this.scene.remove(t.root);
-    this.turrets = [];
-    const n = world.mods.turrets;
-    for (let i = 0; i < n; i++) {
-      const t = buildTurret();
-      const x = n === 1 ? 0 : -Cfg.LANE_HALF + 0.6 + (i / (n - 1)) * (Cfg.LANE_HALF * 2 - 1.2);
-      t.root.position.set(x, 1.1, 1.1);
-      this.scene.add(t.root);
-      this.turrets.push(t);
-    }
-  }
-
-  makeGate(g) {
-    const group = new THREE.Group();
-    const css = gateColor(g);
-    const col = new THREE.Color(css);
-    const w = g.halfW * 2, h = Cfg.GATE_HEIGHT;
-
-    const tex = stripeTexture(css);
-    tex.repeat.set(Math.max(1, Math.round(w / 1.2)), 1);
-    const panelMat = new THREE.MeshStandardMaterial({
-      map: tex, transparent: true, opacity: 0.62, emissive: col, emissiveIntensity: 0.3,
-      roughness: 0.2, depthWrite: false, side: THREE.DoubleSide,
-    });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.08), panelMat);
-    panel.position.y = h / 2 + 0.3;
-    panel.renderOrder = 2;
-    group.add(panel);
-
-    // Frame: rounded posts on feet, a top bar, glowing caps
-    const dark = col.clone().multiplyScalar(0.6).getHex();
-    const mid = col.clone().multiplyScalar(0.85).getHex();
-    const f = new Batch();
-    for (const sx of [-1, 1]) {
-      const x = sx * (w / 2 + 0.06);
-      f.add(new THREE.CylinderGeometry(0.12, 0.14, h + 0.35, 12), mid, mat(x, (h + 0.35) / 2 + 0.12, 0));
-      f.add(new THREE.BoxGeometry(0.42, 0.18, 0.5), dark, mat(x, 0.2, 0));
-      f.add(new THREE.TorusGeometry(0.135, 0.035, 6, 14), 0xffffff, mat(x, 0.5, 0, Math.PI / 2));
-      f.add(new THREE.TorusGeometry(0.135, 0.035, 6, 14), 0xffffff, mat(x, h + 0.1, 0, Math.PI / 2));
-    }
-    f.add(new THREE.CylinderGeometry(0.09, 0.09, w + 0.1, 10), mid, mat(0, h + 0.47, 0, 0, 0, Math.PI / 2));
-    f.add(new THREE.CylinderGeometry(0.06, 0.06, w, 8), dark, mat(0, 0.33, 0, 0, 0, Math.PI / 2));
-    group.add(f.build(vcMat({ roughness: 0.3, metalness: 0.35 })));
-
-    const capMat = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.9, roughness: 0.2 });
-    for (const sx of [-1, 1]) {
-      const cap = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), capMat);
-      cap.position.set(sx * (w / 2 + 0.06), h + 0.55, 0);
-      group.add(cap);
-    }
-
-    const label = makeLabel(256, 128);
-    drawLabel(label, gateText(g), { stroke: g.kind === 'div' ? '#4a0000' : '#2a0c4a' });
-    const lm = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w * 0.98, 3.8), Math.min(w * 0.49, 1.9)),
-      new THREE.MeshBasicMaterial({ map: label.tex, transparent: true, depthWrite: false }));
-    lm.position.set(0, h / 2 + 0.35, 0.06);
-    lm.renderOrder = 3;
-    group.add(lm);
-    group.position.set(g.x, 0.2, -g.z);
-    this.scene.add(group);
-    return { gate: g, group, panelMat, capMat, tex, scale: 1 };
+    this.buildFloor(world);
   }
 
   // ======================================================================
@@ -389,332 +207,378 @@ export class Renderer {
   render(dt) {
     const w = this.world;
     this.time += dt;
-    this.adaptQuality(dt);
     if (w) {
+      if (w.dungeon !== this.builtDungeon) this.buildFloor(w);
       this.consumeEvents(w);
-      this.updateGates(dt);
-      this.updateMobs(w);
-      this.updateTags(w);
-      this.updateBase(w);
-      this.updateCannon(w);
+      this.updateRooms(w, dt);
+      this.updateHero(w, dt);
+      this.updateEnemies(w, dt);
+      this.updateProjectiles(w);
+      this.updatePickups(w, dt);
       this.updateFx(w, dt);
     }
-    this.updateScenery(dt);
     this.updateParticles(dt);
-    this.updateFloaters(dt);
-    this.updateCamera(w);
     this.renderer.render(this.scene, this.camera);
   }
 
-  // Drops the render resolution step by step if the phone can't keep up.
-  adaptQuality(dt) {
-    this.qa = this.qa || { t: 0, frames: 0, ratio: this.renderer.getPixelRatio() };
-    const q = this.qa;
-    q.t += dt; q.frames++;
-    if (q.t < 2.5) return;
-    const fps = q.frames / q.t;
-    q.t = 0; q.frames = 0;
-    if (fps < 40 && q.ratio > 1) {
-      q.ratio = Math.max(1, q.ratio - 0.5);
-      this.renderer.setPixelRatio(q.ratio);
-      this.resize();
-    }
-  }
+  origin(w) { return this.rooms.get(w.roomKey).origin; }
 
   consumeEvents(w) {
+    const [ox, oz] = this.origin(w);
     for (const e of w.events) {
-      if (e.type === 'pop') {
-        let color = e.team === 0 ? COL.blue : e.team === 1 ? COL.red : e.team === 4 ? 0x8a6a4a : COL.gold;
-        if (e.el) color = EL_FX[e.el];
-        this.burst(e.x, e.z, color, e.big ? 18 : e.team === 3 ? 3 : 5, e.big ? 1.6 : 1);
-      } else if (e.type === 'ring') {
-        if (this.rings.length < 160) this.rings.push({ x: e.x, z: e.z, r: e.r, t: 0, life: e.stomp ? 0.45 : 0.35, color: e.color });
-      } else if (e.type === 'text') {
-        this.addFloater(e.x, e.z, e.text, e.color);
+      if (e.type === 'kill') {
+        const col = BLOOD[e.enemy] || 0x5a0606;
+        this.burst(ox + e.x, oz - e.z, col, e.boss ? 60 : 14, e.boss ? 3 : 1.2, 0.5);
+        this.addDecal(w.roomKey, e.x, e.z, col, e.boss ? 3 : e.small ? 0.6 : 0.95);
+      } else if (e.type === 'hit') {
+        this.burst(ox + e.x, oz - e.z, shotColor(e.fx, tmpC).getHex(), 4, 0.6, 0.7);
+      } else if (e.type === 'splat') {
+        this.burst(ox + e.x, oz - e.z, shotColor(e.fx, tmpC).getHex(), 5, 0.5, 0.4);
+      } else if (e.type === 'esplat') {
+        this.burst(ox + e.x, oz - e.z, 0x6a0808, 4, 0.5, 0.4);
+      } else if (e.type === 'explode') {
+        const c = shotColor(e.fx, tmpC).getHex();
+        const col = c === SOUL.getHex() ? 0xff9a3a : c;
+        this.rings.push({ x: ox + e.x, z: oz - e.z, r: e.r, t: 0, life: 0.35, color: col, flash: true });
+        this.burst(ox + e.x, oz - e.z, col, 12, 1.4, 0.6);
+      } else if (e.type === 'slam') {
+        this.rings.push({ x: ox + e.x, z: oz - e.z, r: e.r, t: 0, life: 0.5, color: 0x8a5a3a });
+        this.burst(ox + e.x, oz - e.z, 0x3a3028, 30, 2, 0.3);
+      } else if (e.type === 'hurt') {
+        this.burst(ox + w.player.x, oz - w.player.z, 0x8a0a0a, 12, 1.2, 0.8);
       }
-    }
-    w.events.length = 0;
-  }
-
-  updateGates(dt) {
-    for (const o of this.gateObjs) {
-      const g = o.gate;
-      o.group.position.x = g.x;
-      o.tex.offset.x -= dt * 0.6;
-      o.panelMat.emissiveIntensity = 0.3 + g.flash * 1.2;
-      o.capMat.emissiveIntensity = 0.7 + Math.sin(this.time * 4 + g.id) * 0.3 + g.flash;
-      if (g.used) o.scale = Math.max(0, o.scale - dt * 5);
-      const pulse = 1 + g.flash * 0.06;
-      o.group.scale.set(o.scale * pulse, o.scale * pulse, 1);
-      o.group.visible = o.scale > 0.01;
     }
   }
 
-  updateMobs(w) {
-    const M = this.mob;
-    const t = this.time;
-    let n = 0, nl = 0, nh = 0, nr = 0, nc = 0, nb = 0, nbo = 0, nbu = 0;
+  addDecal(roomKey, x, z, color, size) {
+    const r = this.rooms.get(roomKey);
+    if (!r) return;
+    let m = this.decalMats[color];
+    if (!m) m = this.decalMats[color] = new THREE.MeshBasicMaterial({ map: bloodTexture(), color, transparent: true, depthWrite: false });
+    const d = new THREE.Mesh(this.decalGeo, m);
+    d.position.set(x, 0.015 + r.decals.length * 0.0005, -z);
+    d.rotation.y = Math.random() * Math.PI * 2;
+    d.scale.setScalar(size * (0.8 + Math.random() * 0.5));
+    r.group.add(d);
+    r.decals.push(d);
+    if (r.decals.length > 30) r.group.remove(r.decals.shift());
+  }
 
-    const part = (im, idx, lx, ly, rx, rz) => {
-      tmpL.makeRotationFromEuler(tmpE.set(rx, 0, rz));
-      tmpL.setPosition(lx, ly, 0);
-      tmpO.multiplyMatrices(tmpM, tmpL);
-      im.setMatrixAt(idx, tmpO);
-    };
-
-    const write = (m, bodyCol, scale) => {
-      const speed = m.giant ? 7 : 13;
-      const ph = t * speed + m.phase;
-      const swing = Math.sin(ph) * 0.85;
-      const bob = Math.abs(Math.cos(ph)) * 0.05 * scale;
-      tmpP.set(m.x, 0.24 + bob, -m.z);
-      // Blue units run away from the camera, red ones towards it.
-      const yaw = (m.team === 0 ? Math.PI : 0) + Math.sin(ph * 0.5) * 0.08 + m.vx * 0.08;
-      tmpQ.setFromEuler(tmpE.set(0.08, yaw, Math.sin(ph) * 0.06));
-      tmpS.set(scale, scale, scale);
-      tmpM.compose(tmpP, tmpQ, tmpS);
-
-      M.body.setMatrixAt(n, tmpM);
-      M.body.setColorAt(n, bodyCol);
-      M.eyes.setMatrixAt(n, tmpM);
-      M.pupils.setMatrixAt(n, tmpM);
-      tmpC.copy(bodyCol).multiplyScalar(0.72);
-      for (const sx of [-1, 1]) {
-        part(M.legs, nl, sx * RIG.hipX, RIG.hipY, swing * sx, 0);
-        M.legs.setColorAt(nl, tmpC);
-        part(M.arms, nl, sx * RIG.shoulderX, RIG.shoulderY, -swing * sx * 0.9, sx * 0.35);
-        M.arms.setColorAt(nl, tmpC);
-        nl++;
+  updateRooms(w, dt) {
+    const cur = this.rooms.get(w.roomKey);
+    const tr = w.transition;
+    for (const [k, r] of this.rooms) r.group.visible = k === w.roomKey || (!!tr && k === tr.from);
+    // doors: closed while the current room has enemies
+    for (const r of this.rooms.values()) {
+      const closed = r.room === cur.room ? !cur.room.cleared : false;
+      for (const leaf of r.leaves) {
+        const target = closed ? 0 : -1.4;
+        leaf.position.y += (target - leaf.position.y) * Math.min(1, dt * 10);
+        leaf.visible = leaf.position.y > -1.35;
       }
-      if (m.team === 0) {
-        if (m.kind === 'giant' && nc < MAX_GIANTS) M.crown.setMatrixAt(nc++, tmpM);
-        else if (m.kind !== 'giant') M.hat.setMatrixAt(nh++, tmpM);
-        if (m.shield && nbu < 900) M.bubble.setMatrixAt(nbu++, tmpM);
-      } else {
-        M.helmet.setMatrixAt(nr, tmpM);
-        M.brows.setMatrixAt(nr, tmpM);
-        nr++;
-        if (m.kind === 'shield' && m.armor > 0) M.board.setMatrixAt(nb++, tmpM);
-        if (m.kind === 'bomber') M.bomb.setMatrixAt(nbo++, tmpM);
-        if (m.kind === 'boss' && nc < MAX_GIANTS) M.crown.setMatrixAt(nc++, tmpM);
-      }
+    }
+    // camera: pan between rooms during a transition
+    let tx = cur.origin[0], tz = cur.origin[1];
+    if (tr) {
+      const from = this.rooms.get(tr.from).origin;
+      const k = Math.min(1, tr.t / Cfg.TRANSITION);
+      const s = k * k * (3 - 2 * k);
+      tx = from[0] + (tx - from[0]) * s;
+      tz = from[1] + (tz - from[1]) * s;
+    }
+    this.camPos.set(tx, 0, tz);
+    const sh = w.shake * 0.04;
+    this.camera.position.set(tx + this.camOffset.x + (Math.random() - 0.5) * sh, this.camOffset.y + (Math.random() - 0.5) * sh, tz + this.camOffset.z);
+    this.camera.lookAt(tx, 0, tz + 0.4);
+    this.moon.position.set(tx - 6, 18, tz + 6);
+    this.moon.target.position.set(tx, 0, tz);
+    // candles
+    let n = 0;
+    cur.candles.forEach((c, i) => {
+      const f = 1 + Math.sin(this.time * 13 + i * 2.1) * 0.12 + Math.sin(this.time * 31 + i) * 0.06;
+      tmpM.compose(tmpP.set(tx + c.x, c.y, tz - c.z), tmpQ.identity(), tmpS.set(f, f * 1.2, f));
+      this.flameMesh.setMatrixAt(n, tmpM);
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(f));
+      this.flameGlow.setMatrixAt(n, tmpM);
       n++;
-    };
-
-    for (const m of w.blue) {
-      if (n >= MAX_BLUE_DRAW) break;
-      const s = m.kind === 'giant' ? 3.6 : (m.small ? 1.2 : 1.6) + Math.min(0.7, (m.hp - 1) * 0.04);
-      if (m.kind === 'giant') tmpC2.set(m.el ? EL_BODY[m.el] : COL.giant);
-      else if (m.gold) tmpC2.set(COL.giant);
-      else tmpC2.set(EL_BODY[m.el]);
-      if (m.ghost) tmpC2.lerp(WHITE, 0.45);
-      write(m, tmpC2, s);
-    }
-    for (const m of w.red) {
-      tmpC2.set(RED_KIND[m.kind] || COL.red);
-      if (m.burn > 0) {
-        tmpC2.lerp(BURN, 0.45 + 0.25 * Math.sin(t * 20 + m.phase));
-        if (Math.random() < 0.06 && this.parts.length < MAX_PARTICLES) {
-          this.parts.push({ x: m.x + (Math.random() - 0.5) * 0.4, y: 1.0, z: -m.z, vx: 0, vy: 2.5, vz: 0, life: 0.4, t: 0, color: 0xff8a1a, s: 0.7, g: -1 });
-        }
+      if (i < 2) {
+        this.candleLights[i].position.set(tx + c.x + (c.x > 0 ? -0.3 : 0.3), c.y + 0.2, tz - c.z);
+        this.candleLights[i].intensity = 5 * f;
       }
-      if (m.slow > 0) tmpC2.lerp(FROST, 0.6);
-      if (m.poisoned > 0) tmpC2.lerp(VENOM, 0.35);
-      write(m, tmpC2, RED_SCALE[m.kind] || 1.6);
-    }
+    });
+    for (let i = cur.candles.length; i < 2; i++) this.candleLights[i].intensity = 0;
+    this.flameMesh.count = this.flameGlow.count = n;
+    this.flameMesh.instanceMatrix.needsUpdate = this.flameGlow.instanceMatrix.needsUpdate = true;
+  }
 
-    M.body.count = M.eyes.count = M.pupils.count = n;
-    M.legs.count = M.arms.count = nl;
-    M.hat.count = nh;
-    M.helmet.count = M.brows.count = nr;
-    M.crown.count = nc;
-    M.board.count = nb;
-    M.bomb.count = nbo;
-    M.bubble.count = nbu;
-    for (const im of Object.values(M)) {
+  updateHero(w, dt) {
+    const p = w.player;
+    const [ox, oz] = this.origin(w);
+    const h = this.hero;
+    const moving = p.moving || p.dashT > 0;
+    const bob = moving ? Math.abs(Math.sin(this.time * 11)) * 0.06 : Math.sin(this.time * 2) * 0.015;
+    h.root.position.set(ox + p.x, 0, oz - p.z);
+    h.root.scale.setScalar(1.4);
+    h.body.position.y = bob;
+    const yaw = Math.atan2(p.aimX, p.aimZ);
+    const cur = h.root.rotation.y;
+    const diff = ((yaw - cur + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    h.root.rotation.y = cur + diff * Math.min(1, dt * 14);
+    h.body.rotation.x = moving ? 0.12 : 0;
+    const dash = p.dashT > 0;
+    h.body.scale.set(dash ? 0.85 : 1, dash ? 0.85 : 1, dash ? 1.3 : 1);
+    h.root.visible = !(p.iframes > 0 && Math.floor(this.time * 18) % 2 === 0) || w.state !== 'play';
+    const fl = 1 + Math.sin(this.time * 17) * 0.1 + Math.sin(this.time * 41) * 0.05;
+    h.flame.scale.setScalar(fl);
+    h.lantern.getWorldPosition(tmpP);
+    this.lantern.position.set(tmpP.x, tmpP.y + 0.3, tmpP.z);
+    this.lantern.intensity = 18 * fl;
+    if (dash && Math.random() < 0.6) this.burst(ox + p.x, oz - p.z, 0x1a1418, 2, 0.3, 0.6);
+  }
+
+  updateEnemies(w, dt) {
+    const [ox, oz] = this.origin(w);
+    const seen = new Set();
+    let nb = 0;
+    for (const e of w.enemies) {
+      seen.add(e.id);
+      let m = this.enemyModels.get(e.id);
+      if (!m) {
+        m = buildEnemy(e.type);
+        m.mats = [];
+        m.root.traverse((o) => { if (o.isMesh && o.material.emissive) m.mats.push(o.material); });
+        m.base = m.mats.map((mt) => mt.emissive.clone());
+        this.scene.add(m.root);
+        this.enemyModels.set(e.id, m);
+      }
+      const t = this.time + e.phase;
+      const grow = e.spawnT > 0 ? Math.max(0.05, 1 - e.spawnT / Cfg.SPAWN_DELAY) : 1;
+      const size = e.small ? 0.65 : 1;
+      m.root.position.set(ox + e.x, e.lift || 0, oz - e.z);
+      m.root.scale.setScalar(grow * size * (e.boss ? 1.1 : 1.3));
+      if (e.spawnT > 0 && Math.random() < 0.3) this.burst(ox + e.x, oz - e.z, 0x0a0808, 1, 0.4, 0.3);
+      // face the player, or the direction of travel for chargers/grubs
+      const p = w.player;
+      let yaw = Math.atan2(p.x - e.x, p.z - e.z);
+      if ((e.type === 'ram' || e.type === 'grub') && e.face !== undefined) yaw = Math.atan2(Math.cos(e.face), Math.sin(e.face));
+      m.root.rotation.y = yaw;
+      // per-type animation
+      if (e.type === 'fly') {
+        m.body.position.y = 0.9 + Math.sin(t * 6) * 0.08;
+        const flap = Math.sin(this.time * 60) * 0.7;
+        m.wings[0].rotation.z = flap; m.wings[1].rotation.z = -flap;
+      } else if (e.type === 'grub') {
+        m.segs.forEach((s, i) => { s.position.x = Math.sin(t * 5 - i * 0.9) * 0.07; s.scale.setScalar(1 + Math.sin(t * 5 - i) * 0.05); });
+      } else if (e.type === 'eye') {
+        m.body.position.y = 1.0 + Math.sin(t * 2.5) * 0.12;
+        m.lid.scale.z = e.blink > 0 ? 1 : 0.02;
+      } else if (e.type === 'ram') {
+        m.body.rotation.x = e.state === 'charge' ? 0.25 : e.state === 'stun' ? Math.sin(this.time * 30) * 0.1 : Math.sin(t * 8) * 0.04;
+      } else if (e.type === 'slime') {
+        const squash = e.hop > 0 ? 1.25 : 0.85 + Math.sin(t * 6) * 0.05;
+        m.body.scale.set(1 / Math.sqrt(squash), squash, 1 / Math.sqrt(squash));
+        m.body.position.y = e.hop > 0 ? Math.sin((e.hop / 0.45) * Math.PI) * 0.35 : 0;
+      } else if (e.type === 'bloat') {
+        const swell = e.swell ? 1.12 : 1;
+        const pulse = 1 + Math.sin(t * 3) * 0.03;
+        m.body.scale.set(swell * pulse, swell / pulse, swell * pulse);
+      }
+      // status tint and hit flash through emissive
+      let tint = null;
+      if (e.frozen > 0) tint = FX_COL.ice;
+      else if (e.burn > 0) tint = FX_COL.fire;
+      else if (e.poison > 0) tint = FX_COL.poison;
+      m.mats.forEach((mt, i) => {
+        mt.emissive.copy(m.base[i]);
+        if (tint) mt.emissive.lerp(tint, e.frozen > 0 ? 0.55 : 0.3 + 0.15 * Math.sin(this.time * 12));
+        if (e.flash > 0) mt.emissive.lerp(WHITE, e.flash * 0.6);
+      });
+      if (e.burn > 0 && Math.random() < 0.15) this.burst(ox + e.x, oz - e.z, 0xff8a2a, 1, 0.3, 1.2, -6);
+      if (e.flying || e.lift || e.type === 'eye') {
+        const s = e.r * (e.lift ? Math.max(0.6, 1.4 - e.lift * 0.15) : 1.1);
+        tmpM.compose(tmpP.set(ox + e.x, 0.02, oz - e.z), tmpQ.identity(), tmpS.setScalar(s * grow));
+        this.blobMesh.setMatrixAt(nb++, tmpM);
+      }
+    }
+    this.blobMesh.count = nb;
+    this.blobMesh.instanceMatrix.needsUpdate = true;
+    for (const [id, m] of this.enemyModels) {
+      if (!seen.has(id)) { this.scene.remove(m.root); this.enemyModels.delete(id); }
+    }
+  }
+
+  updateProjectiles(w) {
+    const [ox, oz] = this.origin(w);
+    let i = 0;
+    for (const s of w.shots) {
+      if (i >= 300) break;
+      const r = s.r * (1 + Math.sin(s.t * 20) * 0.08);
+      tmpM.compose(tmpP.set(ox + s.x, 0.55, oz - s.z), tmpQ.identity(), tmpS.setScalar(r));
+      this.shotCore.setMatrixAt(i, tmpM);
+      shotColor(s.fx, tmpC);
+      this.shotCore.setColorAt(i, tmpC2.copy(tmpC).lerp(WHITE, 0.5));
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(r * 2.6));
+      this.shotGlow.setMatrixAt(i, tmpM);
+      this.shotGlow.setColorAt(i, tmpC);
+      i++;
+    }
+    this.shotCore.count = this.shotGlow.count = i;
+    i = 0;
+    for (const b of w.eshots) {
+      if (i >= 200) break;
+      tmpM.compose(tmpP.set(ox + b.x, 0.55, oz - b.z), tmpQ.identity(), tmpS.setScalar(b.r));
+      this.eshotCore.setMatrixAt(i, tmpM);
+      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(b.r * 2.4));
+      this.eshotGlow.setMatrixAt(i, tmpM);
+      i++;
+    }
+    this.eshotCore.count = this.eshotGlow.count = i;
+    i = 0;
+    for (const o of w.orbs) {
+      if (i >= 200) break;
+      tmpQ.setFromEuler(tmpE.set(0, this.time * 4 + i, 0));
+      tmpM.compose(tmpP.set(ox + o.x, 0.25 + Math.sin(this.time * 5 + i) * 0.05, oz - o.z), tmpQ, tmpS.setScalar(1 + Math.min(2, o.value * 0.15)));
+      this.orbMesh.setMatrixAt(i++, tmpM);
+    }
+    this.orbMesh.count = i;
+    i = 0;
+    const fx = w.shotEffects();
+    for (const [x, z] of w.orbitalPositions()) {
+      const f = 1 + Math.sin(this.time * 15 + i) * 0.1;
+      tmpM.compose(tmpP.set(ox + x, 0.7, oz - z), tmpQ.identity(), tmpS.setScalar(f));
+      this.wispMesh.setMatrixAt(i, tmpM);
+      this.wispGlow.setMatrixAt(i, tmpM);
+      const c = shotColor(fx, tmpC).getHex() === SOUL.getHex() ? tmpC.set(0xffb060) : tmpC;
+      this.wispMesh.setColorAt(i, c);
+      this.wispGlow.setColorAt(i, c);
+      i++;
+    }
+    this.wispMesh.count = this.wispGlow.count = i;
+    for (const im of [this.shotCore, this.shotGlow, this.eshotCore, this.eshotGlow, this.orbMesh, this.wispMesh, this.wispGlow]) {
       im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
   }
 
-  updateTags(w) {
-    const big = [];
-    for (const m of w.blue) if (m.giant) big.push(m);
-    for (const m of w.red) if (m.giant) big.push(m);
-    while (this.tags.length < big.length) {
-      const label = makeLabel(256, 112);
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label.tex, depthTest: false, transparent: true }));
-      sprite.scale.set(3.0, 1.3, 1);
-      sprite.renderOrder = 9;
-      this.scene.add(sprite);
-      this.tags.push({ label, sprite });
+  updatePickups(w, dt) {
+    const r = this.rooms.get(w.roomKey);
+    const room = w.room;
+    const seen = new Set();
+    for (const it of room.pickups) {
+      seen.add(it);
+      let m = this.pickupModels.get(it);
+      if (!m) {
+        m = this.makePickup(it);
+        r.group.add(m);
+        this.pickupModels.set(it, m);
+      }
+      m.position.x = it.x;
+      m.position.z = -it.z;
+      const t = this.time;
+      if (it.kind === 'coin') { m.rotation.y = t * 4; m.position.y = 0.25 + Math.sin(t * 3) * 0.04; }
+      if (it.kind === 'heart') { m.rotation.y = Math.sin(t * 2) * 0.5; m.position.y = 0.3 + Math.sin(t * 3) * 0.05; m.scale.setScalar(1 + Math.sin(t * 6) * 0.06); }
+      if (it.kind === 'item' && m.userData.icon) {
+        m.userData.icon.position.y = 1.35 + Math.sin(t * 2.2) * 0.08;
+        m.userData.glow.material.opacity = 0.35 + Math.sin(t * 3) * 0.1;
+      }
     }
-    for (let k = 0; k < this.tags.length; k++) {
-      const tag = this.tags[k];
-      const m = big[k];
-      tag.sprite.visible = !!m;
-      if (!m) continue;
-      drawLabel(tag.label, String(Math.ceil(m.hp + m.armor)), {
-        color: m.team === 0 ? '#ffe680' : '#ffffff', stroke: m.team === 0 ? '#5a3500' : '#4a0010',
-      });
-      tag.sprite.position.set(m.x, m.kind === 'boss' ? 7 : 4.0, -m.z);
+    for (const [it, m] of this.pickupModels) {
+      if (!seen.has(it) && m.parent === r.group) {
+        if (it.kind === 'item') this.burst(r.origin[0] + it.x, r.origin[1] - it.z, 0xfff0c0, 20, 1.5, 1.0);
+        r.group.remove(m);
+        this.pickupModels.delete(it);
+      }
     }
   }
 
-  updateBase(w) {
-    const txt = String(Math.max(0, Math.ceil(w.baseHp)));
-    if (txt !== this.lastBaseText) {
-      this.lastBaseText = txt;
-      drawLabel(this.baseLabel, txt, { bar: Math.max(0, w.baseHp / w.baseMax), force: true });
+  makePickup(it) {
+    const g = new THREE.Group();
+    if (it.kind === 'coin') {
+      const c = new THREE.Mesh(this.coinGeo, this.coinMat);
+      c.castShadow = true;
+      g.add(c);
+    } else if (it.kind === 'heart') {
+      const h = new THREE.Mesh(this.heartGeo, this.heartMat);
+      h.castShadow = true;
+      h.scale.setScalar(1.3);
+      g.add(h);
+    } else if (it.kind === 'item') {
+      g.add(buildPedestal());
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffe0a0, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.set(1.6, 1.6, 1);
+      glow.position.y = 1.35;
+      g.add(glow);
+      const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: iconTexture(ITEMS[it.id].icon), transparent: true }));
+      icon.scale.set(0.8, 0.8, 1);
+      g.add(icon);
+      g.userData.icon = icon;
+      g.userData.glow = glow;
+    } else if (it.kind === 'trapdoor') {
+      g.add(buildTrapdoor());
     }
-    for (const m of this.baseMats) m.emissiveIntensity = w.baseFlash * 0.45;
-    const destroyed = w.state === 'won';
-    const k = destroyed ? Math.min(1, w.endTime * 1.5) : 0;
-    this.base.position.y = 0.2 - k * 5;
-    this.base.rotation.z = destroyed ? Math.sin(w.endTime * 30) * 0.03 * (1 - k) : 0;
-    this.base.scale.set(1 + w.baseFlash * 0.03, 1 - w.baseFlash * 0.02, 1);
-    this.baseSprite.visible = k < 1;
-    this.horde.position.y = -k * 2;
-    this.horde.visible = k < 1;
-    if (destroyed && !this.celebrated) {
-      this.celebrated = true;
-      for (let i = 0; i < 6; i++) this.burst((Math.random() - 0.5) * 8, Cfg.LANE_LEN, 0xe0403f, 14, 2.2);
-      this.confetti();
+    if (it.price) {
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 64;
+      const ctx = c.getContext('2d');
+      ctx.font = 'bold 40px Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = '#000';
+      ctx.strokeText(`${it.price}¢`, 64, 34);
+      ctx.fillStyle = '#e8c870';
+      ctx.fillText(`${it.price}¢`, 64, 34);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      tag.scale.set(0.9, 0.45, 1);
+      tag.position.set(0, it.kind === 'item' ? 0.2 : 0.75, 0.75);
+      g.add(tag);
     }
-    for (const m of this.wallMats) m.emissiveIntensity = w.castleFlash * 0.8;
+    return g;
   }
 
   updateFx(w, dt) {
-    const t = this.time;
-    // rings
-    let i = 0;
+    const [ox, oz] = this.origin(w);
+    let i = 0, f = 0;
     this.rings = this.rings.filter((r) => (r.t += dt) < r.life);
     for (const r of this.rings) {
       const k = r.t / r.life;
-      const sc = r.r * (0.25 + 0.75 * Math.sqrt(k));
-      tmpM.compose(tmpP.set(r.x, 0.4 + k * 0.3, -r.z), tmpQ.identity(), tmpS.set(sc, 1 + (1 - k) * 2, sc));
+      const s = r.r * (0.3 + 0.7 * Math.sqrt(k));
+      tmpM.compose(tmpP.set(r.x, 0.2, r.z), tmpQ.identity(), tmpS.set(s, 1, s));
       this.ringMesh.setMatrixAt(i, tmpM);
       this.ringMesh.setColorAt(i, tmpC.set(r.color).multiplyScalar(1 - k));
       i++;
+      if (r.flash) {
+        tmpM.compose(tmpP.set(r.x, 0.4, r.z), tmpQ, tmpS.setScalar(r.r * 0.8 * (0.5 + k)));
+        this.flashMesh.setMatrixAt(f, tmpM);
+        this.flashMesh.setColorAt(f, tmpC.set(r.color).multiplyScalar((1 - k) * 0.8));
+        f++;
+      }
     }
     this.ringMesh.count = i;
-    // catapult rocks + markers
-    i = 0;
-    for (const r of w.rocks) {
-      const k = Math.min(1, r.t / r.dur);
-      const pulse = 1 + Math.sin(t * 18) * 0.06;
-      tmpM.compose(tmpP.set(r.tx, 0.27, -r.tz), tmpQ.identity(), tmpS.setScalar(Cfg.ROCK_RADIUS * pulse * (0.6 + 0.4 * k)));
-      this.markMesh.setMatrixAt(i, tmpM);
-      const sx = 0, sy = 7, sz = -Cfg.LANE_LEN + 1;
-      tmpP.set(sx + (r.tx - sx) * k, sy + (0.4 - sy) * k + Math.sin(k * Math.PI) * 9, sz + (-r.tz - sz) * k);
-      tmpQ.setFromEuler(tmpE.set(t * 5, t * 3, 0));
-      tmpM.compose(tmpP, tmpQ, tmpS.setScalar(1));
-      this.rockMesh.setMatrixAt(i, tmpM);
-      i++;
-    }
-    this.markMesh.count = this.rockMesh.count = i;
-    // poison clouds
+    this.flashMesh.count = f;
     i = 0;
     for (const c of w.clouds) {
       const k = c.t / c.life;
-      const fade = Math.min(1, (1 - k) * 4) * Math.min(1, c.t * 6);
-      const wob = 1 + Math.sin(t * 3 + c.x) * 0.06;
-      tmpM.compose(tmpP.set(c.x, 0.5, -c.z), tmpQ.identity(), tmpS.set(c.r * wob * fade, c.r * 0.4 * fade + 0.01, c.r * wob * fade));
+      const fade = Math.min(1, (1 - k) * 4) * Math.min(1, c.t * 5);
+      const wob = 1 + Math.sin(this.time * 3 + c.x) * 0.08;
+      tmpM.compose(tmpP.set(ox + c.x, 0.3, oz - c.z), tmpQ.identity(), tmpS.set(c.r * wob * fade, c.r * 0.45 * fade + 0.01, c.r * wob * fade));
       this.cloudMesh.setMatrixAt(i++, tmpM);
     }
     this.cloudMesh.count = i;
-    // turret shots
-    i = 0;
-    for (const s of w.shots) {
-      if (i >= 80) break;
-      tmpM.compose(tmpP.set(s.x, 1.6, -s.z), tmpQ.identity(), tmpS.setScalar(1));
-      this.shotMesh.setMatrixAt(i, tmpM);
-      this.shotMesh.setColorAt(i, tmpC.set(s.el ? EL_FX[s.el] : 0xfff2a0));
-      i++;
-    }
-    this.shotMesh.count = i;
-    for (const im of [this.ringMesh, this.markMesh, this.rockMesh, this.cloudMesh, this.shotMesh]) {
+    for (const im of [this.ringMesh, this.flashMesh, this.cloudMesh]) {
       im.instanceMatrix.needsUpdate = true;
       if (im.instanceColor) im.instanceColor.needsUpdate = true;
     }
-    // turrets aim at the closest enemy
-    for (const tr of this.turrets) {
-      let best = null, bd = 1e9;
-      for (const r of w.red) {
-        const d = (r.x - tr.root.position.x) ** 2 + r.z * r.z;
-        if (d < bd) { bd = d; best = r; }
-      }
-      if (best) tr.head.rotation.y = Math.atan2(-(best.x - tr.root.position.x), best.z + 1);
-    }
   }
 
-  updateCannon(w) {
-    this.cannon.position.x = w.cannonX;
-    this.cannon.rotation.z = w.stun > 0 ? Math.sin(this.time * 40) * 0.08 : 0;
-    this.barrel.position.z = w.recoil * 0.25;
-    this.cannon.scale.setScalar(0.85 * (1 + w.recoil * 0.04));
-    const f = Math.max(0, w.recoil - 0.55) / 0.45;
-    this.flash.visible = f > 0.02;
-    this.flash.scale.set(0.6 + f * 0.6, 0.6 + f * 0.6, 1 + f * 1.4);
-    this.flash.material.opacity = 0.9 * f;
-  }
-
-  updateScenery(dt) {
-    const t = this.time;
-    for (const f of this.torches) {
-      const s = 1 + Math.sin(t * 17 + f.position.x) * 0.15 + Math.sin(t * 29) * 0.08;
-      f.scale.set(s, s * 1.15, s);
-    }
-    for (const b of this.banners) b.rotation.x = Math.sin(t * 2 + b.position.x) * 0.06;
-    for (const fl of this.flags) waveFlag(fl, t + fl.position.x, 0.18);
-    for (const c of this.env.clouds) {
-      c.position.x += c.userData.speed * dt;
-      if (c.position.x > 130) c.position.x = -130;
-    }
-    // Idle horde: bob and sway in place
-    if (this.horde.visible) {
-      for (let i = 0; i < HORDE; i++) {
-        const h = this.hordeSlots[i];
-        const b = Math.abs(Math.sin(t * 5 + h.ph));
-        tmpP.set(h.x, 0.22 + b * 0.18, h.z);
-        tmpQ.setFromEuler(tmpE.set(0, h.yaw, Math.sin(t * 2.5 + h.ph) * 0.12));
-        tmpS.set(h.s, h.s * (0.94 + b * 0.08), h.s);
-        tmpM.compose(tmpP, tmpQ, tmpS);
-        this.horde.setMatrixAt(i, tmpM);
-      }
-      this.horde.instanceMatrix.needsUpdate = true;
-    }
-  }
-
-  updateCamera(w) {
-    const shake = w ? w.shake : 0;
-    const follow = w ? w.cannonX * 0.12 : 0;
-    this.camera.position.set(
-      this.camBase.x + follow + (Math.random() - 0.5) * shake * 0.06,
-      this.camBase.y + (Math.random() - 0.5) * shake * 0.06,
-      this.camBase.z);
-    this.camera.lookAt(this.camLook.x + follow * 0.5, this.camLook.y, this.camLook.z);
-  }
-
-  burst(x, z, color, n, power) {
+  burst(x, z, color, n, power, y = 0.5, gravity = 14) {
     for (let k = 0; k < n && this.parts.length < MAX_PARTICLES; k++) {
-      const a = Math.random() * Math.PI * 2;
-      const sp = (1.5 + Math.random() * 3) * power;
+      const a = Math.random() * Math.PI * 2, sp = (0.6 + Math.random() * 2.2) * power;
       this.parts.push({
-        x, y: 0.5, z: -z,
-        vx: Math.cos(a) * sp, vy: 3 + Math.random() * 4 * power, vz: Math.sin(a) * sp,
-        life: 0.45 + Math.random() * 0.35, t: 0, color, s: 0.7 + Math.random() * 0.8, g: 18,
-      });
-    }
-  }
-
-  confetti() {
-    for (let k = 0; k < 220 && this.parts.length < MAX_PARTICLES; k++) {
-      this.parts.push({
-        x: (Math.random() - 0.5) * 10, y: 2 + Math.random() * 3, z: -(Cfg.LANE_LEN - 2 - Math.random() * 8),
-        vx: (Math.random() - 0.5) * 8, vy: 8 + Math.random() * 9, vz: Math.random() * 6,
-        life: 1.6 + Math.random() * 1.2, t: 0, s: 0.9 + Math.random() * 0.6, g: 9, flat: true,
-        color: CONFETTI[Math.floor(Math.random() * CONFETTI.length)],
+        x, y, z, vx: Math.cos(a) * sp, vy: 1 + Math.random() * 3 * power, vz: Math.sin(a) * sp,
+        t: 0, life: 0.35 + Math.random() * 0.4, color, s: 0.6 + Math.random() * 1.0, g: gravity,
       });
     }
   }
@@ -726,14 +590,10 @@ export class Renderer {
       p.t += dt;
       if (p.t >= p.life) continue;
       p.vy -= p.g * dt;
-      if (p.flat) { p.vx *= 1 - dt; p.vz *= 1 - dt; p.vy = Math.max(p.vy, -3); }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      if (p.y < 0.3) { p.y = 0.3; p.vy *= -0.4; p.vx *= 0.7; p.vz *= 0.7; }
-      const s = p.flat ? p.s : p.s * (1 - p.t / p.life);
-      tmpP.set(p.x, p.y, p.z);
-      tmpQ.setFromEuler(tmpE.set(p.t * 7, p.t * 9, 0));
-      if (p.flat) tmpS.set(s * 1.4, s * 0.15, s); else tmpS.set(s, s, s);
-      tmpM.compose(tmpP, tmpQ, tmpS);
+      if (p.y < 0.03) { p.y = 0.03; p.vy *= -0.3; p.vx *= 0.6; p.vz *= 0.6; }
+      const s = p.s * (1 - p.t / p.life);
+      tmpM.compose(tmpP.set(p.x, p.y, p.z), tmpQ.setFromEuler(tmpE.set(p.t * 6, p.t * 8, 0)), tmpS.setScalar(s));
       this.partMesh.setMatrixAt(i, tmpM);
       this.partMesh.setColorAt(i, tmpC.set(p.color));
       i++;
@@ -743,31 +603,5 @@ export class Renderer {
     this.partMesh.count = i;
     this.partMesh.instanceMatrix.needsUpdate = true;
     if (this.partMesh.instanceColor) this.partMesh.instanceColor.needsUpdate = true;
-  }
-
-  addFloater(x, z, text, color) {
-    const label = makeLabel(256, 112);
-    drawLabel(label, text, { color });
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: label.tex, depthTest: false, transparent: true }));
-    sprite.scale.set(3, 1.3, 1);
-    sprite.renderOrder = 11;
-    sprite.position.set(x, 2.5, -z);
-    this.scene.add(sprite);
-    this.floaters.push({ sprite, t: 0 });
-  }
-
-  updateFloaters(dt) {
-    this.floaters = this.floaters.filter((f) => {
-      f.t += dt;
-      f.sprite.position.y += dt * 2.5;
-      f.sprite.material.opacity = Math.max(0, 1 - f.t / 1.2);
-      if (f.t > 1.2) {
-        this.scene.remove(f.sprite);
-        f.sprite.material.map.dispose();
-        f.sprite.material.dispose();
-        return false;
-      }
-      return true;
-    });
   }
 }

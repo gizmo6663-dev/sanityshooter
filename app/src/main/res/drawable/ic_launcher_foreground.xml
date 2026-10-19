@@ -1,24 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A blue mob with a visor, on the 108dp adaptive icon canvas. -->
+<!-- A hooded wanderer with glowing eyes, on the 108dp adaptive icon canvas. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- shadow -->
-    <path android:fillColor="#33000000"
-        android:pathData="M30,80 a24,6 0 1,0 48,0 a24,6 0 1,0 -48,0z" />
-    <!-- body -->
-    <path android:fillColor="#1B1033"
-        android:pathData="M54,24 C70,24 77,38 77,54 L77,70 C77,80 69,84 54,84 C39,84 31,80 31,70 L31,54 C31,38 38,24 54,24z" />
-    <path android:fillColor="#2F7DFF"
-        android:pathData="M54,27 C68,27 74,40 74,54 L74,69 C74,78 67,81 54,81 C41,81 34,78 34,69 L34,54 C34,40 40,27 54,27z" />
-    <!-- highlight -->
-    <path android:fillColor="#6AA6FF"
-        android:pathData="M44,36 C47,31 52,30 55,31 C50,33 47,37 45,42z" />
-    <!-- visor -->
-    <path android:fillColor="#1B1033"
-        android:pathData="M38,48 C38,43 70,43 70,48 L70,55 C70,60 38,60 38,55z" />
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M40,49 C40,46 68,46 68,49 L68,54 C68,57 40,57 40,54z" />
+    <!-- lantern glow -->
+    <path android:fillColor="#33FFB070"
+        android:pathData="M54,54 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0" />
+    <!-- cloak -->
+    <path android:fillColor="#3B342D"
+        android:pathData="M54,26 C66,26 72,36 72,48 C72,54 70,58 68,62 L76,84 L32,84 L40,62 C38,58 36,54 36,48 C36,36 42,26 54,26z" />
+    <!-- hood opening -->
+    <path android:fillColor="#050405"
+        android:pathData="M54,36 C62,36 66,42 66,49 C66,56 61,60 54,60 C47,60 42,56 42,49 C42,42 46,36 54,36z" />
+    <!-- eyes -->
+    <path android:fillColor="#BFE8FF"
+        android:pathData="M48,48 m-2.6,0 a2.6,2 0 1,0 5.2,0 a2.6,2 0 1,0 -5.2,0" />
+    <path android:fillColor="#BFE8FF"
+        android:pathData="M60,48 m-2.6,0 a2.6,2 0 1,0 5.2,0 a2.6,2 0 1,0 -5.2,0" />
+    <!-- ragged hem -->
+    <path android:fillColor="#2A241F"
+        android:pathData="M32,84 L36,90 L40,84 L44,91 L48,84 L52,90 L56,84 L60,91 L64,84 L68,90 L72,84 L76,84z" />
 </vector>

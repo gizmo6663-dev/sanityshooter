@@ -3,100 +3,66 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Mob Blaster</title>
+  <title>Dypet</title>
   <link rel="stylesheet" href="style.css">
   <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 </head>
 <body>
   <div id="stage"></div>
+  <div id="vignette"></div>
+  <div id="hurt-flash"></div>
 
-  <!-- In-round HUD -->
+  <!-- In-game HUD -->
   <div id="hud" class="hidden">
-    <div class="topbar">
-      <div class="pill level">NIVÅ <b id="hud-level">1</b></div>
-      <div class="pill coins">🪙 <b id="hud-coins">0</b></div>
-      <button id="btn-pause" class="pill round" aria-label="Pause">❚❚</button>
-    </div>
-    <div id="hud-items" class="hud-items"></div>
-    <div id="banner" class="banner"></div>
-    <div id="hint">Hold fingeren nede og dra for å sikte</div>
-    <div class="bottombar">
-      <div class="castle">
-        <span>🛡️</span>
-        <div class="bar"><div id="hud-castle-fill"></div></div>
-        <b id="hud-castle">10</b>
+    <div class="hud-top">
+      <div class="hud-left">
+        <div id="hearts" class="hearts"></div>
+        <div class="hud-line"><span class="coin">¢</span> <b id="hud-coins">0</b> <span class="floor-name" id="hud-floor">Kjelleren I</span></div>
       </div>
-      <button id="btn-giant" aria-label="Send kjempe">
-        <div class="ring" id="giant-ring"></div>
-        <div class="face">🦍<small>KJEMPE</small></div>
-      </button>
+      <canvas id="minimap" width="160" height="160"></canvas>
     </div>
+    <div class="xp"><div id="xp-fill"></div><span id="xp-level">1</span></div>
+    <div id="boss-bar" class="boss-bar hidden"><div class="boss-name" id="boss-name"></div><div class="bar"><div id="boss-fill"></div></div></div>
+    <div id="hud-items" class="hud-items"></div>
+    <button id="btn-pause" class="icon-btn" aria-label="Pause">❚❚</button>
+    <div id="stick" class="stick hidden"><div id="knob" class="knob"></div></div>
+    <button id="btn-dash" class="dash" aria-label="Dash"><div id="dash-ring" class="dash-ring"></div><span>DASH</span></button>
   </div>
 
-  <!-- Hub: workshop with permanent upgrades, start / continue a run -->
-  <div id="hub" class="screen hidden">
-    <div class="logo"><span class="l1">MOB</span><span class="l2">BLASTER</span></div>
-    <div class="shop-head">
-      <div class="pill gems big">💎 <b id="hub-gems">0</b></div>
-      <div class="pill">REKORD <b id="hub-best">0</b></div>
-    </div>
-    <div class="section-title">VERKSTED <small>permanente oppgraderinger</small></div>
-    <div id="hub-cards" class="cards"></div>
-    <div class="cta-stack">
-      <button id="btn-run" class="cta">NY RUN ▶</button>
-      <button id="btn-abandon" class="cta secondary hidden">AVSLUTT RUN</button>
-    </div>
+  <!-- Item / floor announcement, Isaac style -->
+  <div id="announce" class="announce"><div id="announce-title"></div><div id="announce-sub"></div></div>
+
+  <!-- Title -->
+  <div id="title" class="screen center hidden">
+    <div class="logo">DYPET</div>
+    <div class="tagline">Det er bare én vei ut. Ned.</div>
+    <button id="btn-start" class="btn">STIG NED</button>
+    <div id="title-stats" class="stats"></div>
+    <div class="help">Venstre tommel styrer. Du skyter automatisk.<br>Trykk DASH for å unngå skudd.</div>
   </div>
 
-  <!-- Item pick after a won round -->
-  <div id="pick" class="screen hidden">
-    <div id="pick-title" class="screen-title">VELG EN GJENSTAND</div>
-    <div class="screen-sub">Tre gjenstander med samme type gir en forvandling.</div>
-    <div id="pick-cards" class="pick-cards"></div>
-  </div>
-
-  <!-- Run shop between rounds -->
-  <div id="runshop" class="screen hidden">
-    <div class="screen-title">BUTIKK</div>
-    <div class="shop-head">
-      <div class="pill level">NESTE NIVÅ <b id="rs-level">1</b></div>
-      <div class="pill coins big">🪙 <b id="rs-coins">0</b></div>
-    </div>
-    <div class="castle wide">
-      <span>🛡️</span>
-      <div class="bar"><div id="rs-castle-fill"></div></div>
-      <b id="rs-castle">10</b>
-    </div>
-    <div class="section-title">TIL SALGS</div>
-    <div id="rs-stock" class="cards"></div>
-    <div class="row-buttons">
-      <button id="btn-reroll" class="small-btn">🎲 Nye varer <span id="reroll-price"></span></button>
-      <button id="btn-heal" class="small-btn">🔧 Reparer +4 <span id="heal-price"></span></button>
-    </div>
-    <div class="section-title">DINE GJENSTANDER <small>trykk for info</small></div>
-    <div id="rs-synergy" class="synergy"></div>
-    <div id="rs-items" class="item-row"></div>
-    <button id="btn-next" class="cta">SPILL NIVÅ <span id="next-level">1</span> ▶</button>
-  </div>
-
-  <!-- Round result -->
-  <div id="result" class="screen center hidden">
-    <div class="result-box">
-      <div id="result-title" class="result-title">SEIER!</div>
-      <div id="result-sub" class="result-sub"></div>
-      <div id="result-reward" class="result-coins">🪙 +<b id="result-coins">0</b></div>
-      <button id="btn-continue" class="cta">FORTSETT</button>
-    </div>
+  <!-- Level up -->
+  <div id="levelup" class="screen center hidden">
+    <div class="screen-title">MØRKET GIR DEG KRAFT</div>
+    <div class="screen-sub">Velg en velsignelse</div>
+    <div id="perk-cards" class="cards"></div>
   </div>
 
   <!-- Pause -->
   <div id="pause" class="screen center hidden">
-    <div class="result-box">
-      <div class="result-title small">PAUSE</div>
-      <div id="pause-items" class="item-row center"></div>
-      <button id="btn-resume" class="cta">FORTSETT</button>
-      <button id="btn-quit" class="cta secondary">GI OPP RUNDEN</button>
-    </div>
+    <div class="screen-title">PAUSE</div>
+    <div id="pause-items" class="item-list"></div>
+    <div id="pause-stats" class="stats"></div>
+    <button id="btn-resume" class="btn">FORTSETT</button>
+    <button id="btn-giveup" class="btn ghost">GI OPP</button>
+  </div>
+
+  <!-- End of run -->
+  <div id="end" class="screen center hidden">
+    <div id="end-title" class="screen-title big">DU DØDE</div>
+    <div id="end-sub" class="screen-sub"></div>
+    <div id="end-items" class="item-list"></div>
+    <button id="btn-again" class="btn">PRØV IGJEN</button>
   </div>
 
   <!-- Item info popup -->

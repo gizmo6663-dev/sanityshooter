@@ -1,226 +1,83 @@
-// Items found during a run. Each item changes the round's modifiers ("mods")
-// that sim.js reads. Items never talk to each other directly; they combine
-// through shared mechanics: elements carry over to explosions, stomps and
-// turret shots, gates copy every property of the mob that passes, and so on.
-// Three items with the same tag unlock a transformation.
+// Items (found in treasure rooms, shops and after bosses), level-up perks
+// (Survivors-style, from xp) and transformations (three items sharing a
+// tag). Items only change numbers in the stats object; the combinations
+// come from shared rules in the world: shots carry elements and every effect
+// a shot spawns (explosions, splits) carries them too, orbiting wisps apply
+// the same on-hit effects, and so on.
+
+import { Cfg } from './config.js';
 
 export const TAGS = {
-  fire:   { name: 'Ild',     color: '#ff7a2a' },
-  ice:    { name: 'Is',      color: '#6fdcff' },
-  poison: { name: 'Gift',    color: '#5fd35a' },
-  giant:  { name: 'Kjempe',  color: '#ffc23d' },
-  gate:   { name: 'Port',    color: '#b36bff' },
-  swarm:  { name: 'Sverm',   color: '#2f7dff' },
-  wall:   { name: 'Mur',     color: '#8fa6c8' },
-  gold:   { name: 'Gull',    color: '#ffd84a' },
+  fire:   { name: 'Ild',     color: '#d8642a' },
+  ice:    { name: 'Is',      color: '#6fb8d8' },
+  poison: { name: 'Gift',    color: '#6aa84f' },
+  occult: { name: 'Okkult',  color: '#8e5bc4' },
+  tear:   { name: 'Skudd',   color: '#c9b37a' },
+  body:   { name: 'Kjøtt',   color: '#b0413e' },
 };
 
-// rarity: 1 common, 2 rare, 3 legendary
 export const ITEMS = {
-  // --- Elements ----------------------------------------------------------
-  powder: {
-    name: 'Brennende krutt', icon: '🔥', tags: ['fire'], rarity: 1,
-    desc: '25 % av mobene er ildmober. Fiender de treffer, brenner.',
-    apply: (m) => { m.el.fire += 0.25; m.burnDps += 1; },
-  },
-  dragon: {
-    name: 'Dragepust', icon: '🐉', tags: ['fire'], rarity: 2,
-    desc: 'Ild brenner dobbelt så lenge og sprer seg til fiender ved siden av.',
-    apply: (m) => { m.burnTime *= 2; m.burnSpread = true; m.el.fire += 0.1; },
-  },
-  frost: {
-    name: 'Frostkrystall', icon: '❄️', tags: ['ice'], rarity: 1,
-    desc: '25 % av mobene er ismober. Fiender de treffer, fryser fast.',
-    apply: (m) => { m.el.ice += 0.25; m.slowTime += 1; },
-  },
-  glacier: {
-    name: 'Isbre', icon: '🧊', tags: ['ice', 'wall'], rarity: 2,
-    desc: 'Fiender nær muren din går 60 % saktere. Frosne fiender tar dobbel skade.',
-    apply: (m) => { m.frostWall = true; m.frozenDmgMult = 2; },
-  },
-  venom: {
-    name: 'Giftsekk', icon: '🧪', tags: ['poison'], rarity: 1,
-    desc: '25 % av mobene er giftmober. Når de dør, etterlater de en giftsky.',
-    apply: (m) => { m.el.poison += 0.25; m.cloudSize += 1; },
-  },
-  plague: {
-    name: 'Pestrotte', icon: '🐀', tags: ['poison', 'swarm'], rarity: 2,
-    desc: 'Fiender som dør av gift, blir til en blå mob på din side.',
-    apply: (m) => { m.plagueConvert = true; },
-  },
-  prism: {
-    name: 'Prisme', icon: '🌈', tags: ['fire', 'ice', 'poison'], rarity: 3,
-    desc: 'Element-effekter er 50 % sterkere, og hver mob har 10 % sjanse for hvert element.',
-    apply: (m) => { m.el.fire += 0.1; m.el.ice += 0.1; m.el.poison += 0.1; m.elPower *= 1.5; },
-  },
-
-  // --- Mob properties ----------------------------------------------------
-  kamikaze: {
-    name: 'Kamikaze', icon: '💣', tags: ['swarm'], rarity: 1,
-    desc: 'Mober eksploderer når de dør. Eksplosjonen får mobens element.',
-    apply: (m) => { m.explode += 0.9; },
-  },
-  mitosis: {
-    name: 'Celledeling', icon: '🧫', tags: ['swarm'], rarity: 2,
-    desc: '30 % sjanse for at en mob som dør, deler seg i to små.',
-    apply: (m) => { m.split += 0.3; },
-  },
-  shield: {
-    name: 'Skjoldbærer', icon: '🛡️', tags: ['swarm', 'wall'], rarity: 1,
-    desc: 'Hver tredje mob har et skjold som tar det første slaget.',
-    apply: (m) => { m.shieldEvery = m.shieldEvery ? Math.max(1, m.shieldEvery - 1) : 3; },
-  },
-  ghost: {
-    name: 'Spøkelsesdrakt', icon: '👻', tags: ['swarm'], rarity: 2,
-    desc: 'Mober går gjennom den første fienden de møter.',
-    apply: (m) => { m.ghost = true; },
-  },
-  heavy: {
-    name: 'Tung ammo', icon: '🪨', tags: ['swarm'], rarity: 1,
-    desc: '+2 liv per mob, men kanonen skyter 25 % saktere.',
-    apply: (m) => { m.unitHp += 2; m.fireRate *= 0.75; },
-  },
-  boots: {
-    name: 'Lynsko', icon: '👟', tags: ['swarm'], rarity: 1,
-    desc: 'Mobene løper 40 % fortere.',
-    apply: (m) => { m.unitSpeed *= 1.4; },
-  },
-  midas: {
-    name: 'Midas-hanske', icon: '🧤', tags: ['gold'], rarity: 2,
-    desc: '12 % av mobene er gullmober med tredobbelt liv. Gullmober gir mynter for drap.',
-    apply: (m) => { m.goldChance += 0.12; },
-  },
-
-  // --- Cannon -------------------------------------------------------------
-  twin: {
-    name: 'Tvillingløp', icon: '🔱', tags: ['swarm'], rarity: 1,
-    desc: '+1 mob per salve.',
-    apply: (m) => { m.shots += 1; },
-  },
-  minigun: {
-    name: 'Maskinkanon', icon: '⚙️', tags: [], rarity: 1,
-    desc: 'Kanonen skyter 35 % raskere.',
-    apply: (m) => { m.fireRate *= 1.35; },
-  },
-  shotgun: {
-    name: 'Hagle', icon: '💥', tags: ['swarm'], rarity: 2,
-    desc: 'Hver fjerde salve er en vifte med 6 ekstra mober.',
-    apply: (m) => { m.shotgun += 6; },
-  },
-  rage: {
-    name: 'Raseri', icon: '😡', tags: ['wall'], rarity: 1,
-    desc: 'Når borgen tar skade, skyter kanonen dobbelt så fort i 4 sekunder.',
-    apply: (m) => { m.rage = true; },
-  },
-
-  // --- Gates --------------------------------------------------------------
-  gatemaster: {
-    name: 'Portmester', icon: '🚪', tags: ['gate'], rarity: 2,
-    desc: '+1 på alle ×-porter.',
-    apply: (m) => { m.gateBonus += 1; },
-  },
-  elemgate: {
-    name: 'Elementport', icon: '🌀', tags: ['gate'], rarity: 2,
-    desc: 'Mober som går gjennom en port, får et tilfeldig element hvis de ikke har ett.',
-    apply: (m) => { m.gateElement = true; },
-  },
-  mirror: {
-    name: 'Speilport', icon: '🪞', tags: ['gate'], rarity: 2,
-    desc: 'En ekstra ×2-port dukker opp på hvert nivå.',
-    apply: (m) => { m.extraGates += 1; },
-  },
-  chargegate: {
-    name: 'Ladeport', icon: '🔋', tags: ['gate', 'giant'], rarity: 1,
-    desc: 'Hver port en mob passerer, lader kjempen litt.',
-    apply: (m) => { m.gateCharge += 0.15; },
-  },
-  goldgate: {
-    name: 'Gullport', icon: '🏅', tags: ['gate', 'gold'], rarity: 1,
-    desc: 'Mober som passerer en port, har 8 % sjanse for å bli gullmober.',
-    apply: (m) => { m.gateGold += 0.08; },
-  },
-
-  // --- Giant --------------------------------------------------------------
-  thunder: {
-    name: 'Tordenkjempe', icon: '⚡', tags: ['giant'], rarity: 2,
-    desc: 'Kjempen tramper hvert sekund og skader alt rundt seg. Trampet får kjempens element.',
-    apply: (m) => { m.stomp += 3; },
-  },
-  brood: {
-    name: 'Kjempebarn', icon: '🐣', tags: ['giant', 'swarm'], rarity: 1,
-    desc: 'Når kjempen dør, slipper den ut 12 mober.',
-    apply: (m) => { m.brood += 12; },
-  },
-  twins: {
-    name: 'Kjempetvillinger', icon: '👯', tags: ['giant'], rarity: 3,
-    desc: 'Kjempen kommer alltid i par.',
-    apply: (m) => { m.giantPair = true; },
-  },
-  steroids: {
-    name: 'Kjempeserum', icon: '💉', tags: ['giant'], rarity: 1,
-    desc: 'Kjempen har 60 % mer liv og lades 25 % raskere.',
-    apply: (m) => { m.giantHp *= 1.6; m.giantCharge *= 0.75; },
-  },
-  banner: {
-    name: 'Krigsbanner', icon: '🚩', tags: ['giant', 'swarm'], rarity: 2,
-    desc: 'Mober nær kjempen får skjold.',
-    apply: (m) => { m.giantAura = true; },
-  },
-
-  // --- Wall & economy --------------------------------------------------------
-  turret: {
-    name: 'Murtårn', icon: '🗼', tags: ['wall'], rarity: 1,
-    desc: 'Et tårn på muren skyter mot nærmeste fiende. Skuddene får tilfeldig element du eier.',
-    apply: (m) => { m.turrets += 1; },
-  },
-  spikes: {
-    name: 'Piggmur', icon: '🌵', tags: ['wall'], rarity: 1,
-    desc: 'Fiender som når muren, gjør halv skade og eksploderer.',
-    apply: (m) => { m.spikes = true; },
-  },
-  greed: {
-    name: 'Grådighet', icon: '💰', tags: ['gold'], rarity: 1,
-    desc: '+50 % mynter, men fiendene har 20 % mer liv.',
-    apply: (m) => { m.coinMult *= 1.5; m.enemyHp *= 1.2; },
-  },
-  bank: {
-    name: 'Sparegris', icon: '🐷', tags: ['gold'], rarity: 1,
-    desc: '15 % rente på myntene dine etter hvert nivå (maks 60).',
-    apply: (m) => { m.interest += 0.15; },
-  },
-  vampire: {
-    name: 'Blodtørst', icon: '🩸', tags: ['wall'], rarity: 2,
-    desc: 'Hvert 40. drap reparerer borgen med 1 liv.',
-    apply: (m) => { m.regenKills = m.regenKills ? Math.max(15, m.regenKills - 15) : 40; },
-  },
+  nail:    { name: 'Rusten nagle', icon: '🔩', tags: ['body'], text: 'Skade opp',
+    desc: '+1 skade.', apply: (s) => { s.damage += 1; } },
+  mirror:  { name: 'Sprukket speil', icon: '🪞', tags: ['tear'], text: 'Dobbelt syn',
+    desc: 'Skyter to skudd, men litt saktere.', apply: (s) => { s.shots += 1; s.fireRateMult *= 0.9; } },
+  eye3:    { name: 'Det tredje øyet', icon: '👁️', tags: ['tear', 'occult'], text: 'Ser alt',
+    desc: 'Tre skudd i vifte. -20 % skade.', apply: (s) => { s.shots += 2; s.spread += 0.22; s.damageMult *= 0.8; } },
+  chain:   { name: 'Sjelelenke', icon: '⛓️', tags: ['occult'], text: 'Skuddene finner veien',
+    desc: 'Skuddene søker mot fiender.', apply: (s) => { s.homing += 3.5; } },
+  splinter:{ name: 'Beinsplint', icon: '🦴', tags: ['body'], text: 'Gjennom kjøtt og bein',
+    desc: 'Skuddene går gjennom to fiender.', apply: (s) => { s.pierce += 2; } },
+  ember:   { name: 'Glødende kull', icon: '🔥', tags: ['fire'], text: 'Alt skal brenne',
+    desc: 'Skuddene setter fyr på fiender.', apply: (s) => { s.fire += 1; } },
+  frost:   { name: 'Frostbitt', icon: '❄️', tags: ['ice'], text: 'Kaldt hjerte',
+    desc: 'Skuddene bremser fiender. Treff nok, og de fryser fast.', apply: (s) => { s.ice += 1; } },
+  rot:     { name: 'Råtten kjertel', icon: '🧪', tags: ['poison'], text: 'Smittsom',
+    desc: 'Skuddene forgifter. Forgiftede fiender etterlater en giftsky.', apply: (s) => { s.poison += 1; } },
+  quick:   { name: 'Kvikksølv', icon: '💧', tags: ['body'], text: 'Fart opp',
+    desc: '+15 % fart og skuddfart.', apply: (s) => { s.speedMult *= 1.15; s.shotSpeedMult *= 1.15; } },
+  jar:     { name: 'Hjerte i krukke', icon: '🫀', tags: ['body'], text: 'Liv opp',
+    desc: '+1 hjertebeholder og full helse.', apply: (s) => { s.maxHp += 2; }, onPickup: (w) => { w.healPlayer(99); } },
+  powder:  { name: 'Svartkrutt', icon: '💣', tags: ['fire'], text: 'Smell',
+    desc: 'Skuddene eksploderer når de treffer. Eksplosjonen får skuddets element.', apply: (s) => { s.explode += 1.0; } },
+  skull:   { name: 'Splintret hodeskalle', icon: '💀', tags: ['tear', 'occult'], text: 'Splinter',
+    desc: 'Skuddene deler seg i tre når de treffer.', apply: (s) => { s.split += 3; } },
+  wisp:    { name: 'Irrbloss', icon: '🕯️', tags: ['occult', 'fire'], text: 'Følgesvenner',
+    desc: 'To irrbloss kretser rundt deg og skader fiender. De får dine skudd-effekter.', apply: (s) => { s.orbitals += 2; } },
+  leech:   { name: 'Igle', icon: '🩸', tags: ['body'], text: 'Blodtørst',
+    desc: 'Hvert 12. drap gir et halvt hjerte.', apply: (s) => { s.leech = s.leech ? Math.max(6, s.leech - 4) : 12; } },
+  prophet: { name: 'Gal profet', icon: '📿', tags: ['occult'], text: 'Skuddtakt opp',
+    desc: '+0,8 skudd i sekundet.', apply: (s) => { s.fireRate += 0.8; } },
+  thorns:  { name: 'Tornekrone', icon: '🌿', tags: ['occult', 'body'], text: 'Gjengjeld',
+    desc: 'Når du blir truffet, skyter du en ring av skudd.', apply: (s) => { s.thorns += 10; } },
+  cloak:   { name: 'Skyggekappe', icon: '🦇', tags: ['occult'], text: 'Bli skygge',
+    desc: 'Dash skader fiender du passerer, og lades raskere.', apply: (s) => { s.dashDamage += 8; s.dashCooldownMult *= 0.7; } },
+  lens:    { name: 'Forstørrelsesglass', icon: '🔍', tags: ['tear'], text: 'Større skudd',
+    desc: 'Større skudd med 40 % mer skade, men de flyr saktere.', apply: (s) => { s.shotSize *= 1.5; s.damageMult *= 1.4; s.shotSpeedMult *= 0.8; } },
+  pouch:   { name: 'Gravrøverens pose', icon: '💰', tags: [], text: 'Grådighet',
+    desc: 'Dobbelt så mange mynter. Gir 5 mynter med en gang.', apply: (s) => { s.coinMult *= 2; }, onPickup: (w) => { w.player.coins += 5; } },
+  moth:    { name: 'Dødsmøll', icon: '🦋', tags: ['tear'], text: 'Rekkevidde opp',
+    desc: '+50 % rekkevidde, og skuddene flagrer.', apply: (s) => { s.rangeMult *= 1.5; s.wobble += 1; } },
+  venomfang: { name: 'Giftand', icon: '🐍', tags: ['poison', 'body'], text: 'Bitt',
+    desc: 'Forgiftede fiender tar 50 % mer skade.', apply: (s) => { s.poisonVuln += 0.5; s.poison += 0.3; } },
+  shard:   { name: 'Isskår', icon: '🧊', tags: ['ice', 'tear'], text: 'Kald presisjon',
+    desc: 'Frosne fiender tar dobbel skade.', apply: (s) => { s.frozenMult = 2; s.ice += 0.3; } },
 };
 
 export const ITEM_IDS = Object.keys(ITEMS);
 
-// Three items sharing a tag unlock its transformation.
 export const TRANSFORMS = {
-  fire:   { name: 'Pyroman',    icon: '☄️', desc: 'Brennende fiender eksploderer i ild når de dør. Ild gjør dobbel skade.',
-            apply: (m) => { m.pyro = true; m.burnDps *= 2; } },
-  ice:    { name: 'Permafrost', icon: '🥶', desc: 'Frosne fiender knuses og fryser alle rundt seg når de dør.',
-            apply: (m) => { m.shatter = true; m.slowTime += 1; } },
-  poison: { name: 'Pestlege',   icon: '☠️', desc: 'Giftskyer er dobbelt så store og varer lenger.',
-            apply: (m) => { m.cloudSize *= 2; m.cloudTime *= 1.6; } },
-  giant:  { name: 'Titan',      icon: '🗿', desc: 'En gratis kjempe kommer av seg selv hvert 14. sekund.',
-            apply: (m) => { m.autoGiant = 14; } },
-  gate:   { name: 'Portherre',  icon: '🏛️', desc: '+1 på alle porter, og hver portpassering gir litt mynter.',
-            apply: (m) => { m.gateBonus += 1; m.gateCoins += 0.05; } },
-  swarm:  { name: 'Legion',     icon: '🐜', desc: 'Plass til 200 flere mober på banen, og alle mober får +1 liv.',
-            apply: (m) => { m.maxBlue += 200; m.unitHp += 1; } },
-  wall:   { name: 'Festning',   icon: '🏯', desc: '+1 murtårn, og borgen reparerer seg selv litt hvert 6. sekund.',
-            apply: (m) => { m.turrets += 1; m.wallRegen = 6; } },
-  gold:   { name: 'Kong Midas', icon: '👑', desc: 'Gullmober har femdobbelt liv, og 5 % av alle mober blir gull.',
-            apply: (m) => { m.goldMult = 5; m.goldChance += 0.05; } },
+  fire:   { name: 'Askebærer', icon: '🌋', desc: 'Brennende fiender eksploderer når de dør.', apply: (s) => { s.pyro = true; } },
+  ice:    { name: 'Vinterhjerte', icon: '🥶', desc: 'Frosne fiender knuses og fryser alle rundt seg.', apply: (s) => { s.shatter = true; } },
+  poison: { name: 'Pestbærer', icon: '☠️', desc: 'Gift smitter til fiender i nærheten.', apply: (s) => { s.plague = true; } },
+  occult: { name: 'Okkultist', icon: '🔮', desc: '+1 irrbloss, og skuddene søker litt.', apply: (s) => { s.orbitals += 1; s.homing += 1.5; } },
+  tear:   { name: 'Stormskudd', icon: '🌧️', desc: '+1 skudd og +15 % skuddtakt.', apply: (s) => { s.shots += 1; s.fireRateMult *= 1.15; } },
+  body:   { name: 'Kjøttberg', icon: '🥩', desc: '+1 hjertebeholder og +1 skade.', apply: (s) => { s.maxHp += 2; s.damage += 1; } },
 };
 
 export function tagCounts(items) {
-  const counts = {};
-  for (const id of items) for (const t of ITEMS[id].tags) counts[t] = (counts[t] || 0) + 1;
-  return counts;
+  const c = {};
+  for (const id of items) for (const t of ITEMS[id].tags) c[t] = (c[t] || 0) + 1;
+  return c;
 }
 
 export function activeTransforms(items) {
@@ -228,31 +85,39 @@ export function activeTransforms(items) {
   return Object.keys(TRANSFORMS).filter((t) => (c[t] || 0) >= 3);
 }
 
-/** Builds the round modifiers from meta upgrades + run items. */
-export function buildMods(meta, items) {
-  const m = {
-    fireRate: 1 / meta.fireInterval(),  // volleys per second
-    shots: meta.shotsPerVolley(),
-    unitHp: meta.unitHp(),
-    unitSpeed: 1,
-    shotgun: 0,
-    rage: false,
-    el: { fire: 0, ice: 0, poison: 0 },
-    elPower: 1,
-    burnDps: 1, burnTime: 3, burnSpread: false,
-    slowTime: 2, frozenDmgMult: 1, frostWall: false,
-    cloudSize: 1, cloudTime: 3, plagueConvert: false,
-    explode: 0, split: 0, shieldEvery: 0, ghost: false,
-    goldChance: 0, goldMult: 3,
-    gateBonus: meta.gateBonus(), gateElement: false, extraGates: 0, gateCharge: 0, gateGold: 0, gateCoins: 0,
-    stomp: 0, brood: 0, giantPair: false, giantAura: false, autoGiant: 0,
-    giantHp: meta.giantHp(), giantCharge: meta.giantCharge(),
-    turrets: 0, spikes: false, wallRegen: 0, regenKills: 0,
-    coinMult: meta.coinMult(), enemyHp: 1, interest: 0,
-    pyro: false, shatter: false,
-    maxBlue: 0,
+// --- Level-up perks --------------------------------------------------------
+export const PERKS = {
+  sharp:  { name: 'Skarpere', icon: '🗡️', desc: '+12 % skade', weight: 3, apply: (s) => { s.damageMult *= 1.12; } },
+  hands:  { name: 'Raske hender', icon: '✋', desc: '+12 % skuddtakt', weight: 3, apply: (s) => { s.fireRateMult *= 1.12; } },
+  feet:   { name: 'Lette føtter', icon: '🦶', desc: '+8 % fart', weight: 2, apply: (s) => { s.speedMult *= 1.08; } },
+  reach:  { name: 'Lang arm', icon: '🏹', desc: '+15 % rekkevidde og skuddfart', weight: 2, apply: (s) => { s.rangeMult *= 1.15; s.shotSpeedMult *= 1.1; } },
+  heal:   { name: 'Pusterom', icon: '❤️‍🩹', desc: 'Helbred et helt hjerte', weight: 2, apply: () => {}, instant: (w) => w.healPlayer(2) },
+  vigor:  { name: 'Seigt liv', icon: '❤️', desc: '+1 hjertebeholder', weight: 1, apply: (s) => { s.maxHp += 2; }, instant: (w) => w.healPlayer(2) },
+  magnet: { name: 'Grådige fingre', icon: '🧲', desc: '+40 % plukkeradius', weight: 1, apply: (s) => { s.magnetMult *= 1.4; } },
+  crit:   { name: 'Blodsmak', icon: '🎯', desc: '+10 % sjanse for dobbel skade', weight: 2, apply: (s) => { s.crit += 0.1; } },
+  pierce: { name: 'Gjennomtrengende', icon: '📌', desc: 'Skuddene går gjennom +1 fiende', weight: 1, apply: (s) => { s.pierce += 1; } },
+  dash:   { name: 'Skyggesteg', icon: '💨', desc: '-15 % nedkjøling på dash', weight: 1, apply: (s) => { s.dashCooldownMult *= 0.85; } },
+};
+
+/** Stats from base values + perks + items + transformations. */
+export function buildStats(items, perks) {
+  const s = {
+    damage: Cfg.DAMAGE, damageMult: 1,
+    fireRate: Cfg.FIRE_RATE, fireRateMult: 1,
+    range: Cfg.RANGE, rangeMult: 1,
+    shotSpeed: Cfg.SHOT_SPEED, shotSpeedMult: 1, shotSize: 1, wobble: 0,
+    speed: Cfg.PLAYER_SPEED, speedMult: 1,
+    maxHp: Cfg.PLAYER_HP,
+    shots: 1, spread: 0.18, homing: 0, pierce: 0, split: 0, explode: 0, crit: 0,
+    fire: 0, ice: 0, poison: 0, poisonVuln: 0, frozenMult: 1,
+    orbitals: 0, thorns: 0, leech: 0,
+    dashDamage: 0, dashCooldownMult: 1,
+    magnetMult: 1, coinMult: 1,
+    pyro: false, shatter: false, plague: false,
   };
-  for (const id of items) ITEMS[id].apply(m);
-  for (const t of activeTransforms(items)) TRANSFORMS[t].apply(m);
-  return m;
+  for (const id of perks) PERKS[id].apply(s);
+  for (const id of items) ITEMS[id].apply(s);
+  for (const t of activeTransforms(items)) TRANSFORMS[t].apply(s);
+  s.maxHp = Math.min(Cfg.MAX_HP_CAP, s.maxHp);
+  return s;
 }

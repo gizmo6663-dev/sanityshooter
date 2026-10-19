@@ -1,94 +1,54 @@
 // All tuning numbers in one place. Start here when something feels off.
-// World units: x runs across the lane, z runs from the cannon (0) towards
-// the enemy base. The renderer maps z to -Z in three.js.
+// World units: x runs left-right, z runs "up" the screen (north). The
+// renderer maps z to -Z in three.js. Rooms are taller than wide so they fit
+// a phone held upright.
 
 export const Cfg = {
-  // Lane
-  LANE_HALF: 4.6,          // lane is x in [-LANE_HALF, LANE_HALF]
-  LANE_LEN: 44,            // z of the enemy base front
-  CANNON_Z: 1.2,
+  // Rooms (interior size in tiles of 1x1 units)
+  ROOM_W: 9,
+  ROOM_D: 13,
+  ROOM_STRIDE_X: 11,       // distance between room centres on the floor grid
+  ROOM_STRIDE_Z: 15,
+  DOOR_HALF: 0.75,         // half width of a doorway
+  GRID: 9,                 // floor map is GRID x GRID cells
+  FLOORS: 4,               // beating the 4th floor's boss wins the run
+  ROOMS_BASE: 9,           // rooms per floor = ROOMS_BASE + ROOMS_PER_FLOOR * floor
+  ROOMS_PER_FLOOR: 2,
+  TRANSITION: 0.4,         // seconds the camera spends panning between rooms
 
-  // Units
-  UNIT_R: 0.27,
-  UNIT_SPEED: 9.5,
-  GIANT_R: 0.8,
-  GIANT_SPEED: 4.2,
-  MAX_BLUE: 340,           // hard cap on player mobs (Legion raises it)
-  MAX_RED: 300,
+  // Player
+  PLAYER_R: 0.32,
+  PLAYER_SPEED: 4.0,
+  PLAYER_HP: 6,            // half hearts (3 full hearts)
+  MAX_HP_CAP: 24,
+  DAMAGE: 3.5,
+  FIRE_RATE: 2.4,          // shots per second
+  RANGE: 6.5,              // shot travel distance
+  SHOT_SPEED: 8.5,
+  SHOT_R: 0.14,
+  IFRAMES: 1.0,
+  DASH_SPEED: 13,
+  DASH_TIME: 0.17,
+  DASH_COOLDOWN: 1.1,
+  MAGNET: 1.6,             // xp/coin pickup radius
 
-  // Cannon
-  CANNON_SPEED: 24,        // how fast the cannon follows the finger, x/s
-  FIRE_INTERVAL: 0.24,     // seconds between volleys at upgrade 0
-  FIRE_INTERVAL_MULT: 0.9, // per fire-rate upgrade
-  FIRE_INTERVAL_MIN: 0.07,
-  MULTISHOT_SPREAD: 0.55,
+  // Experience (Survivors-style level ups)
+  XP_FIRST: 6,
+  XP_GROWTH: 1.35,
 
-  // Giant
-  GIANT_CHARGE: 45,        // volleys needed at upgrade 0
-  GIANT_CHARGE_PER_UPG: 4,
-  GIANT_CHARGE_MIN: 12,
-  GIANT_HP: 20,
-  GIANT_HP_PER_UPG: 12,
-  GIANT_GATE_SPAWN: 3,     // small units per gate multiplier step
+  // Enemies scale with the floor
+  ENEMY_HP_PER_FLOOR: 0.35,   // +35 % hp per floor
+  ROOM_BUDGET: 5,             // enemy "points" per room on floor 1
+  ROOM_BUDGET_PER_FLOOR: 2.5,
+  SPAWN_DELAY: 0.7,           // enemies appear this long after you enter
+  CONTACT_DMG: 1,             // half hearts
 
-  // Enemies
-  RED_SPEED: 3.4,
-  RED_SPEED_PER_LEVEL: 0.05,
-  RED_RATE: 0.8,           // enemies per second at level 1
-  RED_RATE_PER_LEVEL: 0.22, // fraction of RED_RATE added per level
-  RED_RAMP: 0.01,         // extra rate per second survived (fraction of base rate)
-  RED_HOMING: 0.22,        // how strongly enemies steer towards the cannon
-  RED_PANIC: 0.8,          // rate multiplier added as base hp goes to 0
-  RED_HP_GROWTH: 1.11,     // enemy hp multiplier per level
-  ENRAGE_TIME: 70,         // after this many seconds the enemy rate doubles...
-  ENRAGE_DOUBLE: 25,       // ...every this many seconds
-  BRUTE_FIRST_LEVEL: 3,
-  BRUTE_HP: 12,
-  BRUTE_INTERVAL: 11,      // seconds between brutes
+  // Drops
+  HEART_DROP: 0.26,        // chance a cleared room drops a heart
+  COIN_DROP: 0.45,         // chance a cleared room drops coins
+  ENEMY_COIN: 0.06,        // chance per kill
 
-  // Bases
-  BASE_HP: 500,
-  BASE_EARLY_GROWTH: 1.5,  // per level for the first BASE_EARLY_LEVELS level-ups...
-  BASE_EARLY_LEVELS: 9,
-  BASE_HP_GROWTH: 1.17,    // ...and per level after that
-  CASTLE_HP: 15,           // player base; each upgrade adds CASTLE_HP_PER_UPG
-  CASTLE_HP_PER_UPG: 4,
-
-  // Economy
-  COIN_PER_KILL: 0.2,
-  BRUTE_COINS: 8,          // kill value of a brute, in regular kills
-  WIN_REWARD: 30,
-  WIN_REWARD_PER_LEVEL: 6,
-
-  // Enemy variety (first level each type shows up)
-  RUNNER_LEVEL: 3,
-  SHIELD_LEVEL: 5,
-  SHIELD_ARMOR: 4,         // armor soaks damage before hp; grows with level
-  BOMBER_LEVEL: 7,         // bombers kill nearby blue mobs when they die
-  BOSS_HP: 260,            // boss on every 5th level
-  BOSS_HP_GROWTH: 1.9,     // per boss
-  BOSS_R: 1.2,
-  BOSS_WALL_DMG: 10,
-  BOSS_COINS: 60,
-
-  // Catapult on the enemy base, aimed at the cannon
-  ROCK_LEVEL: 3,
-  ROCK_FIRST: 8,
-  ROCK_INTERVAL: 9,
-  ROCK_MIN: 4,
-  ROCK_FLIGHT: 1.7,
-  ROCK_RADIUS: 1.3,
-
-  // Wall items
-  TURRET_INTERVAL: 0.7,
-  TURRET_RANGE: 26,
-  TURRET_DMG: 2,
-  FROST_WALL_Z: 9,
-  MAX_CLOUDS: 40,
-
-  // Gates
-  TRAP_LEVEL: 4,           // red ÷2 gates from this level
-  GATE_ZONE_START: 8,
-  GATE_ZONE_END: 32,
-  GATE_HEIGHT: 2.3,
+  // Shop
+  ITEM_PRICE: 15,
+  HEART_PRICE: 3,
 };

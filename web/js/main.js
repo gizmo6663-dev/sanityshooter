@@ -1,471 +1,362 @@
-// Entry point: screens, input and the main loop. The round itself lives in
-// sim.js, the drawing in render.js.
+// Entry point: screens, input (floating joystick + dash) and the main loop.
+// The game itself lives in world.js, the drawing in render.js.
 
 import { Cfg } from './config.js';
-import { World } from './sim.js';
-import { Progress, UPGRADES, ORDER } from './progress.js';
-import { ITEMS, TAGS, TRANSFORMS, tagCounts, activeTransforms } from './items.js';
-import { afterWin, pickItem, buyItem, reroll, heal, itemPrice, rerollPrice, healPrice } from './run.js';
+import { World } from './world.js';
+import { Progress } from './progress.js';
 import { Renderer } from './render.js';
+import { ITEMS, PERKS, TRANSFORMS, activeTransforms } from './items.js';
+import { ENEMIES } from './enemies.js';
 import { sfx, unlockAudio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
+const FLOOR_NAMES = ['Kjelleren', 'Katakombene', 'Benhuset', 'Dypet'];
 
 const prog = new Progress();
 prog.load();
-
 const renderer = new Renderer($('stage'));
 let world = null;
-let mode = 'hub';            // hub | pick | runshop | play | pause | result
+let mode = 'title';          // title | play | levelup | pause | end
 
-// --- Input -----------------------------------------------------------------
-const input = { targetX: 0, firing: false, giant: false, pointer: null, lastX: 0, keys: {} };
-
+// --- Input -------------------------------------------------------------------
+const input = { mx: 0, mz: 0, dash: false, stick: null, ox: 0, oy: 0, keys: {} };
+const STICK_R = 50;
 const canvas = renderer.renderer.domElement;
+
 canvas.addEventListener('pointerdown', (e) => {
   unlockAudio();
-  if (mode !== 'play') return;
-  input.pointer = e.pointerId;
-  input.lastX = e.clientX;
-  input.firing = true;
+  if (mode !== 'play' || input.stick !== null) return;
+  input.stick = e.pointerId;
+  input.ox = e.clientX; input.oy = e.clientY;
   canvas.setPointerCapture(e.pointerId);
-  $('hint').style.opacity = 0;
+  const st = $('stick');
+  st.style.left = `${e.clientX}px`;
+  st.style.top = `${e.clientY}px`;
+  st.classList.remove('hidden');
+  $('knob').style.transform = 'translate(0,0)';
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (e.pointerId !== input.pointer) return;
-  // Relative drag: a full screen-width swipe moves the cannon ~1.3 lanes.
-  const dx = e.clientX - input.lastX;
-  input.lastX = e.clientX;
-  input.targetX += dx * (Cfg.LANE_HALF * 2 * 1.3) / window.innerWidth;
-  input.targetX = Math.max(-Cfg.LANE_HALF, Math.min(Cfg.LANE_HALF, input.targetX));
+  if (e.pointerId !== input.stick) return;
+  let dx = e.clientX - input.ox, dy = e.clientY - input.oy;
+  const d = Math.hypot(dx, dy);
+  if (d > STICK_R) {
+    // the stick follows the finger, so you never run out of room
+    input.ox += (dx / d) * (d - STICK_R); input.oy += (dy / d) * (d - STICK_R);
+    dx = e.clientX - input.ox; dy = e.clientY - input.oy;
+    $('stick').style.left = `${input.ox}px`;
+    $('stick').style.top = `${input.oy}px`;
+  }
+  input.mx = dx / STICK_R;
+  input.mz = -dy / STICK_R;
+  $('knob').style.transform = `translate(${dx}px,${dy}px)`;
 });
 const release = (e) => {
-  if (e.pointerId !== input.pointer) return;
-  input.pointer = null;
-  input.firing = false;
+  if (e.pointerId !== input.stick) return;
+  input.stick = null;
+  input.mx = input.mz = 0;
+  $('stick').classList.add('hidden');
 };
 canvas.addEventListener('pointerup', release);
 canvas.addEventListener('pointercancel', release);
 
+$('btn-dash').addEventListener('pointerdown', (e) => { e.stopPropagation(); unlockAudio(); input.dash = true; });
 window.addEventListener('keydown', (e) => {
   input.keys[e.code] = true;
-  if (e.code === 'KeyG') input.giant = true;
+  if (e.code === 'Space' || e.code === 'ShiftLeft') input.dash = true;
+  if (e.code === 'Escape' && mode === 'play') openPause();
   unlockAudio();
 });
 window.addEventListener('keyup', (e) => { input.keys[e.code] = false; });
 
-$('btn-giant').addEventListener('pointerdown', (e) => {
-  e.stopPropagation();
-  unlockAudio();
-  input.giant = true;
-});
+function moveVector() {
+  const k = input.keys;
+  let mx = input.mx, mz = input.mz;
+  mx += (k.KeyD || k.ArrowRight ? 1 : 0) - (k.KeyA || k.ArrowLeft ? 1 : 0);
+  mz += (k.KeyW || k.ArrowUp ? 1 : 0) - (k.KeyS || k.ArrowDown ? 1 : 0);
+  const l = Math.hypot(mx, mz);
+  if (l < 0.15) return [0, 0];
+  return l > 1 ? [mx / l, mz / l] : [mx, mz];
+}
 
-// --- Screens -----------------------------------------------------------------
-const SCREENS = ['hub', 'pick', 'runshop', 'result', 'pause'];
+// --- Screens -------------------------------------------------------------------
+const SCREENS = ['title', 'levelup', 'pause', 'end'];
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
-
 function setMode(m) {
   mode = m;
-  show('hud', m === 'play' || m === 'pause');
-  for (const id of SCREENS) show(id, m === id);
+  show('hud', m === 'play' || m === 'levelup' || m === 'pause');
+  for (const s of SCREENS) show(s, m === s);
   hideTip();
-  input.firing = false;
-  input.pointer = null;
+  if (m !== 'play') {
+    input.stick = null; input.mx = input.mz = 0;
+    $('stick').classList.add('hidden');
+  }
 }
 
-/** World for the current run, or a level-1 preview behind the hub. */
-function newWorld() {
-  const run = prog.run || { level: 1, items: [], castleHp: prog.castleHp() };
-  world = new World(prog, run);
+function openTitle() {
+  world = new World();
   renderer.setWorld(world);
-  input.targetX = 0;
+  const s = [];
+  if (prog.runs) s.push(`Forsøk: ${prog.runs} · Seire: ${prog.wins}`, `Dypeste etasje: ${prog.bestFloor}`, `Fiender drept: ${prog.kills}`);
+  $('title-stats').innerHTML = s.join('<br>');
+  setMode('title');
 }
 
-function fmt(n) {
-  n = Math.floor(n);
-  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M';
-  if (n >= 1e4) return Math.round(n / 1e3) + 'k';
-  return String(n);
+function startRun() {
+  unlockAudio();
+  world = new World();
+  renderer.setWorld(world);
+  lastFloor = -1;
+  endTimer = 0;
+  setMode('play');
 }
 
-function tagChips(item, owned) {
-  const counts = tagCounts(owned);
-  return item.tags.map((t) => {
-    const n = Math.min(3, (counts[t] || 0) + (owned.includes(item.id) ? 0 : 1));
-    return `<span class="tag ${n >= 3 ? 'done' : ''}" style="background:${TAGS[t].color}">${TAGS[t].name} ${n}/3</span>`;
-  }).join('');
-}
+$('btn-start').addEventListener('click', startRun);
+$('btn-again').addEventListener('click', startRun);
+$('btn-pause').addEventListener('click', openPause);
+$('btn-resume').addEventListener('click', () => setMode('play'));
+$('btn-giveup').addEventListener('click', () => { world.player.hp = 0; world.state = 'dead'; prog.recordRun(world); openEnd(); });
+$('tip').addEventListener('click', hideTip);
 
-const RARITY_NAME = { 1: 'VANLIG', 2: 'SJELDEN', 3: 'LEGENDARISK' };
-
-function showTip(html) {
-  const tip = $('tip');
-  tip.innerHTML = html;
-  tip.classList.remove('hidden');
-  clearTimeout(showTip.timer);
-  showTip.timer = setTimeout(hideTip, 3500);
-}
-function hideTip() { $('tip').classList.add('hidden'); }
-
-function itemTip(id) {
-  const it = ITEMS[id];
-  showTip(`<b>${it.icon} ${it.name}</b>${it.desc}`);
-}
-
-function itemChips(container, items, withTransforms = false) {
-  container.innerHTML = '';
+function itemChips(el, items) {
+  el.innerHTML = '';
   for (const id of items) {
     const b = document.createElement('button');
     b.className = 'item-chip';
     b.textContent = ITEMS[id].icon;
-    b.addEventListener('click', (e) => { e.stopPropagation(); itemTip(id); });
-    container.appendChild(b);
+    b.addEventListener('click', () => showTip(`<b>${ITEMS[id].icon} ${ITEMS[id].name}</b>${ITEMS[id].desc}`));
+    el.appendChild(b);
   }
-  if (withTransforms) {
-    for (const t of activeTransforms(items)) {
-      const b = document.createElement('button');
-      b.className = 'item-chip';
-      b.style.background = 'linear-gradient(180deg,#ffe07a,#ffc23d)';
-      b.textContent = TRANSFORMS[t].icon;
-      b.addEventListener('click', (e) => { e.stopPropagation(); showTip(`<b>${TRANSFORMS[t].icon} ${TRANSFORMS[t].name}</b>${TRANSFORMS[t].desc}`); });
-      container.appendChild(b);
-    }
+  for (const t of activeTransforms(items)) {
+    const b = document.createElement('button');
+    b.className = 'item-chip tf';
+    b.textContent = TRANSFORMS[t].icon;
+    b.addEventListener('click', () => showTip(`<b>${TRANSFORMS[t].icon} ${TRANSFORMS[t].name}</b>${TRANSFORMS[t].desc}`));
+    el.appendChild(b);
   }
 }
 
-// --- Hub (workshop) ------------------------------------------------------------
-function openHub() {
-  newWorld();
-  renderHub();
-  setMode('hub');
+function statsText() {
+  const s = world.stats;
+  return [
+    `Skade ${(s.damage * s.damageMult).toFixed(1)} · Skuddtakt ${(s.fireRate * s.fireRateMult).toFixed(1)}/s`,
+    `Fart ${(s.speed * s.speedMult).toFixed(1)} · Rekkevidde ${(s.range * s.rangeMult).toFixed(1)}`,
+    `Nivå ${world.player.level} · Drap ${world.kills} · Tid ${fmtTime(world.time)}`,
+  ].join('<br>');
 }
 
-function renderHub() {
-  $('hub-gems').textContent = fmt(prog.gems);
-  $('hub-best').textContent = prog.bestLevel;
-  $('btn-run').textContent = prog.run ? `FORTSETT RUN (NIVÅ ${prog.run.level}) ▶` : 'NY RUN ▶';
-  show('btn-abandon', !!prog.run);
-  const cards = $('hub-cards');
-  cards.innerHTML = '';
-  for (const id of ORDER) {
-    const u = UPGRADES[id];
-    const maxed = prog.isMaxed(id);
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.dataset.id = id;
-    card.innerHTML = `
-      <div class="row"><div class="icon">${u.icon}</div>
-        <div><div class="name">${u.name}</div><div class="lvl">Nivå ${prog.lvl(id)}/${u.max}</div></div></div>
-      <div class="desc">${u.desc}</div>
-      <div class="stat">${prog.statText(id)}</div>
-      <button class="buy ${maxed ? 'max' : prog.canBuy(id) ? '' : 'off'}">${maxed ? 'MAKS' : '💎 ' + fmt(prog.cost(id))}</button>`;
-    card.querySelector('.buy').addEventListener('click', () => {
-      unlockAudio();
-      if (prog.buy(id)) {
-        sfx.buy();
-        renderHub();
-        const again = cards.querySelector(`[data-id="${id}"]`);
-        if (again) again.classList.add('bought');
-      }
-    });
-    cards.appendChild(card);
-  }
+function openPause() {
+  if (mode !== 'play') return;
+  itemChips($('pause-items'), world.items);
+  $('pause-stats').innerHTML = statsText();
+  setMode('pause');
 }
 
-$('btn-run').addEventListener('click', () => {
-  unlockAudio();
-  if (!prog.run) prog.startRun();
-  const run = prog.run;
-  if (run.choices) openPick();
-  else if (run.stock) openRunShop();
-  else startRound();
-});
-$('btn-abandon').addEventListener('click', () => {
-  if (!prog.run) return;
-  const level = prog.run.level;
-  const gems = prog.endRun();
-  showRunOver(level, gems, 'Du avsluttet runen.');
-});
-
-// --- Item pick -------------------------------------------------------------------
-function openPick() {
-  const run = prog.run;
-  $('pick-title').textContent = (run.level - 1) % 5 === 0 ? 'BOSSBELØNNING!' : 'VELG EN GJENSTAND';
-  const box = $('pick-cards');
+function openLevelUp() {
+  const box = $('perk-cards');
   box.innerHTML = '';
-  for (const id of run.choices) {
-    const it = { ...ITEMS[id], id };
-    const card = document.createElement('button');
-    card.className = `pick-card r${it.rarity}`;
-    card.innerHTML = `
-      <div class="big-icon">${it.icon}</div>
-      <div>
-        <div class="rarity r${it.rarity}t">${RARITY_NAME[it.rarity]}</div>
-        <div class="name">${it.name}</div>
-        <div class="desc">${it.desc}</div>
-        <div class="tags">${tagChips(it, run.items)}</div>
-      </div>`;
-    card.addEventListener('click', () => {
-      unlockAudio();
-      const before = activeTransforms(run.items);
-      if (!pickItem(prog, run, id)) return;
-      sfx.buy();
-      const gained = activeTransforms(run.items).filter((t) => !before.includes(t));
-      openRunShop();
-      if (gained.length) {
-        const t = TRANSFORMS[gained[0]];
-        sfx.win();
-        showTip(`<b>${t.icon} FORVANDLING: ${t.name}!</b>${t.desc}`);
-      }
+  for (const id of world.choices) {
+    const p = PERKS[id];
+    const c = document.createElement('button');
+    c.className = 'card';
+    c.innerHTML = `<div class="icon">${p.icon}</div><div><div class="name">${p.name}</div><div class="desc">${p.desc}</div></div>`;
+    c.addEventListener('click', () => {
+      world.choosePerk(id);
+      sfx.levelup();
+      setMode(world.state === 'levelup' ? 'levelup' : 'play');
+      if (world.state === 'levelup') openLevelUp();
     });
-    box.appendChild(card);
+    box.appendChild(c);
   }
-  setMode('pick');
+  setMode('levelup');
 }
 
-// --- Run shop ----------------------------------------------------------------------
-function openRunShop() {
-  renderRunShop();
-  setMode('runshop');
-}
-
-function renderRunShop() {
-  const run = prog.run;
-  $('rs-level').textContent = run.level;
-  $('next-level').textContent = run.level;
-  $('rs-coins').textContent = fmt(run.coins);
-  const max = prog.castleHp();
-  $('rs-castle').textContent = `${run.castleHp}/${max}`;
-  $('rs-castle-fill').style.width = `${(100 * run.castleHp) / max}%`;
-
-  const stock = $('rs-stock');
-  stock.innerHTML = '';
-  for (const id of run.stock || []) {
-    const it = { ...ITEMS[id], id };
-    const price = itemPrice(id, run.level);
-    const card = document.createElement('div');
-    card.className = `card item r${it.rarity}`;
-    card.style.border = '3px solid';
-    card.innerHTML = `
-      <div class="row"><div class="icon">${it.icon}</div>
-        <div><div class="name">${it.name}</div><div class="rarity r${it.rarity}t">${RARITY_NAME[it.rarity]}</div></div></div>
-      <div class="desc">${it.desc}</div>
-      <div class="tags">${tagChips(it, run.items)}</div>
-      <button class="buy ${run.coins >= price ? '' : 'off'}">🪙 ${price}</button>`;
-    card.querySelector('.buy').addEventListener('click', () => {
-      const before = activeTransforms(run.items);
-      if (!buyItem(prog, run, id)) return;
-      sfx.buy();
-      renderRunShop();
-      const gained = activeTransforms(run.items).filter((t) => !before.includes(t));
-      if (gained.length) {
-        const t = TRANSFORMS[gained[0]];
-        sfx.win();
-        showTip(`<b>${t.icon} FORVANDLING: ${t.name}!</b>${t.desc}`);
-      }
-    });
-    stock.appendChild(card);
-  }
-  if (!(run.stock || []).length) stock.innerHTML = '<div class="screen-sub">Utsolgt!</div>';
-
-  const rp = rerollPrice(run), hp = healPrice(run);
-  $('reroll-price').textContent = `🪙${rp}`;
-  $('heal-price').textContent = `🪙${hp}`;
-  $('btn-reroll').classList.toggle('off', run.coins < rp);
-  $('btn-heal').classList.toggle('off', run.coins < hp || run.castleHp >= max);
-
-  // Synergy progress: tags close to a transformation
-  const counts = tagCounts(run.items);
-  const active = activeTransforms(run.items);
-  const syn = $('rs-synergy');
-  syn.innerHTML = '';
-  for (const t of Object.keys(TAGS)) {
-    const n = counts[t] || 0;
-    if (!n) continue;
-    const el = document.createElement('span');
-    if (active.includes(t)) {
-      el.className = 'tf';
-      el.textContent = `${TRANSFORMS[t].icon} ${TRANSFORMS[t].name}`;
-      el.addEventListener('click', () => showTip(`<b>${TRANSFORMS[t].icon} ${TRANSFORMS[t].name}</b>${TRANSFORMS[t].desc}`));
-    } else {
-      el.className = 'tag';
-      el.style.background = TAGS[t].color;
-      el.textContent = `${TAGS[t].name} ${n}/3`;
-    }
-    syn.appendChild(el);
-  }
-  itemChips($('rs-items'), run.items);
-}
-
-$('btn-reroll').addEventListener('click', () => { if (reroll(prog, prog.run)) { sfx.buy(); renderRunShop(); } });
-$('btn-heal').addEventListener('click', () => { if (heal(prog, prog.run)) { sfx.buy(); renderRunShop(); } });
-$('btn-next').addEventListener('click', () => startRound());
-
-// --- Rounds ------------------------------------------------------------------------
-function startRound() {
-  unlockAudio();
-  const run = prog.run;
-  run.stock = null;
-  run.choices = null;
-  prog.save();
-  newWorld();
-  $('hud-level').textContent = run.level + (world.boss ? ' 👹' : '');
-  $('hint').style.opacity = 1;
-  const hudItems = $('hud-items');
-  hudItems.innerHTML = run.items.map((id) => `<span>${ITEMS[id].icon}</span>`).join('') +
-    activeTransforms(run.items).map((t) => `<span class="tf">${TRANSFORMS[t].icon}</span>`).join('');
-  shownCastle = -1;
-  setMode('play');
-  if (world.boss) flashBanner('BOSSNIVÅ!', 2.5);
-}
-
-let bannerTimer = 0;
-function flashBanner(text, secs) {
-  const b = $('banner');
-  b.textContent = text;
-  b.classList.add('show');
-  clearTimeout(bannerTimer);
-  bannerTimer = setTimeout(() => b.classList.remove('show'), secs * 1000);
-}
-
-function showResult() {
-  const run = prog.run;
+function openEnd() {
   const won = world.state === 'won';
-  const title = $('result-title');
-  title.classList.toggle('lose', !won);
-  show('result-reward', won);
-  if (won) {
-    const { interest } = afterWin(prog, run, world);
-    title.textContent = world.boss ? 'BOSS KNUST!' : 'SEIER!';
-    $('result-sub').textContent = `Nivå ${world.level} klart! ${world.kills} fiender beseiret.` +
-      (interest ? ` Renter: +${interest} 🪙` : '');
-    countUp($('result-coins'), world.reward + interest);
-    $('btn-continue').textContent = 'VELG GJENSTAND';
-    resultNext = openPick;
-    setMode('result');
-  } else {
-    run.kills += world.kills;
-    const level = run.level;
-    const gems = prog.endRun();
-    showRunOver(level, gems, `Fiendebasen hadde ${fmt(Math.ceil(world.baseHp))} liv igjen.`);
-  }
+  $('end-title').textContent = won ? 'DU NÅDDE BUNNEN' : 'DU DØDE';
+  $('end-sub').innerHTML = `${FLOOR_NAMES[world.floor]} · ${fmtTime(world.time)} · ${world.kills} drept · nivå ${world.player.level}` +
+    (won ? '<br>Mørket slipper taket. Denne gangen.' : '');
+  itemChips($('end-items'), world.items);
+  setMode('end');
 }
 
-function showRunOver(level, gems, why) {
-  const title = $('result-title');
-  title.textContent = 'BORGEN FALT';
-  title.classList.add('lose');
-  show('result-reward', true);
-  $('result-reward').innerHTML = `💎 +<b id="result-coins">0</b>`;
-  $('result-sub').textContent = `${why} Runen endte på nivå ${level}. Bruk edelsteinene i verkstedet!`;
-  countUp($('result-coins'), gems);
-  $('btn-continue').textContent = 'TIL VERKSTEDET';
-  resultNext = () => {
-    $('result-reward').innerHTML = `🪙 +<b id="result-coins">0</b>`;
-    openHub();
-  };
-  setMode('result');
+const fmtTime = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+
+let tipTimer = 0;
+function showTip(html) {
+  $('tip').innerHTML = html;
+  $('tip').classList.remove('hidden');
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(hideTip, 3500);
+}
+function hideTip() { $('tip').classList.add('hidden'); }
+
+let announceTimer = 0;
+function announce(title, sub, secs = 2.6) {
+  $('announce-title').textContent = title;
+  $('announce-sub').textContent = sub || '';
+  $('announce').classList.add('show');
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => $('announce').classList.remove('show'), secs * 1000);
 }
 
-let resultNext = openHub;
-
-function countUp(el, value) {
-  const start = performance.now();
-  const step = (now) => {
-    const k = Math.min(1, (now - start) / 700);
-    el.textContent = fmt(Math.round(value * k));
-    if (k < 1) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-$('btn-continue').addEventListener('click', () => resultNext());
-$('btn-pause').addEventListener('click', () => { itemChips($('pause-items'), prog.run.items, true); setMode('pause'); });
-$('btn-resume').addEventListener('click', () => setMode('play'));
-$('btn-quit').addEventListener('click', () => { world.finish(false); showResult(); });
-$('tip').addEventListener('click', hideTip);
-
-// Android back button (called from MainActivity). Returns true if handled.
 window.handleBack = () => {
   if (!$('tip').classList.contains('hidden')) { hideTip(); return true; }
-  if (mode === 'play') { itemChips($('pause-items'), prog.run.items, true); setMode('pause'); return true; }
+  if (mode === 'play') { openPause(); return true; }
   if (mode === 'pause') { setMode('play'); return true; }
-  if (mode === 'result') { resultNext(); return true; }
-  if (mode === 'runshop' || mode === 'pick') { openHub(); return true; }
+  if (mode === 'end') { openTitle(); return true; }
   return false;
 };
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden && mode === 'play') { itemChips($('pause-items'), prog.run.items, true); setMode('pause'); }
-});
+document.addEventListener('visibilitychange', () => { if (document.hidden && mode === 'play') openPause(); });
 
-// --- HUD -----------------------------------------------------------------------
-let shownCoins = -1, shownCastle = -1, shownEnrage = false;
+// --- HUD ------------------------------------------------------------------------
+const HEART_PATH = 'M10 17 C4 12 1 9 1 5.5 C1 3 3 1 5.5 1 C7.5 1 9 2.2 10 4 C11 2.2 12.5 1 14.5 1 C17 1 19 3 19 5.5 C19 9 16 12 10 17Z';
+function heartSvg(kind) {
+  const fill = kind === 'full' ? '#a8141c' : kind === 'half' ? 'url(#half)' : 'rgba(0,0,0,0.5)';
+  return `<svg class="heart" viewBox="0 0 20 18"><defs><linearGradient id="half"><stop offset="50%" stop-color="#a8141c"/><stop offset="50%" stop-color="rgba(0,0,0,0.5)"/></linearGradient></defs>
+    <path d="${HEART_PATH}" fill="${fill}" stroke="#2a0606" stroke-width="1.4"/></svg>`;
+}
+
+let shown = {};
 function updateHud() {
-  const c = Math.floor(world.coins);
-  if (c !== shownCoins) { shownCoins = c; $('hud-coins').textContent = fmt(c); }
-  const hp = Math.max(0, world.castleHp);
-  if (hp !== shownCastle) {
-    if (hp < shownCastle) { sfx.hurt(); if (navigator.vibrate) navigator.vibrate(40); }
-    shownCastle = hp;
-    $('hud-castle').textContent = hp;
-    $('hud-castle').classList.toggle('hurt', hp / world.castleMax < 0.35);
-    $('hud-castle-fill').style.width = `${(100 * hp) / world.castleMax}%`;
+  const p = world.player, s = world.stats;
+  const hk = `${p.hp}/${s.maxHp}`;
+  if (shown.hearts !== hk) {
+    shown.hearts = hk;
+    let h = '';
+    for (let i = 0; i < s.maxHp / 2; i++) {
+      const v = p.hp - i * 2;
+      h += heartSvg(v >= 2 ? 'full' : v === 1 ? 'half' : 'empty');
+    }
+    $('hearts').innerHTML = h;
   }
-  const frac = world.chargeFrac();
-  $('giant-ring').style.background = `conic-gradient(var(--gold) ${frac * 360}deg, rgba(20,16,50,0.6) 0deg)`;
-  $('btn-giant').classList.toggle('ready', world.giantReady());
-  if (!!world.enraged !== shownEnrage) {
-    shownEnrage = !!world.enraged;
-    if (shownEnrage) flashBanner('RASERI! 😡', 2.5);
+  if (shown.coins !== p.coins) { shown.coins = p.coins; $('hud-coins').textContent = p.coins; }
+  const fn = `${FLOOR_NAMES[world.floor]} ${['I', 'II', 'III', 'IV'][world.floor]}`;
+  if (shown.floor !== fn) { shown.floor = fn; $('hud-floor').textContent = fn; }
+  $('xp-fill').style.width = `${Math.min(100, (100 * p.xp) / p.xpNext)}%`;
+  if (shown.level !== p.level) { shown.level = p.level; $('xp-level').textContent = `nivå ${p.level}`; }
+  if (shown.items !== world.items.length) {
+    shown.items = world.items.length;
+    $('hud-items').innerHTML = world.items.map((id) => `<span>${ITEMS[id].icon}</span>`).join('');
+  }
+  const cd = p.dashCd / (Cfg.DASH_COOLDOWN * s.dashCooldownMult);
+  $('btn-dash').classList.toggle('cooling', cd > 0);
+  $('dash-ring').style.background = cd > 0 ? `conic-gradient(rgba(216,207,188,0.5) ${(1 - cd) * 360}deg, transparent 0deg)` : 'none';
+  $('dash-ring').style.webkitMask = 'radial-gradient(circle, transparent 60%, #000 62%)';
+  const boss = world.enemies.find((e) => e.boss);
+  show('boss-bar', !!boss);
+  if (boss) $('boss-fill').style.width = `${Math.max(0, (100 * boss.hp) / boss.maxHp)}%`;
+  if (world.roomKey !== shown.room || world.room.cleared !== shown.cleared) {
+    shown.room = world.roomKey; shown.cleared = world.room.cleared;
+    drawMinimap();
   }
 }
 
-// --- Main loop -------------------------------------------------------------------
+function drawMinimap() {
+  const c = $('minimap'), g = c.getContext('2d');
+  g.clearRect(0, 0, c.width, c.height);
+  const cur = world.room;
+  const cell = 26, cw = 22, ch = 16;
+  const cx = c.width / 2, cy = c.height / 2;
+  for (const r of world.dungeon.rooms.values()) {
+    if (!r.visited && !r.seen) continue;
+    const x = cx + (r.gx - cur.gx) * cell - cw / 2;
+    const y = cy - (r.gy - cur.gy) * (ch + 6) - ch / 2;
+    if (x < -cw || y < -ch || x > c.width || y > c.height) continue;
+    g.fillStyle = r === cur ? '#e8e0d0' : r.visited ? '#6a6258' : 'rgba(40,36,32,0.9)';
+    g.strokeStyle = 'rgba(0,0,0,0.9)';
+    g.lineWidth = 2;
+    g.fillRect(x, y, cw, ch);
+    g.strokeRect(x, y, cw, ch);
+    const icon = { boss: '☠', treasure: '♛', shop: '¢' }[r.type];
+    if (icon) {
+      g.font = 'bold 13px Georgia, serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = r.type === 'boss' ? '#c4262c' : '#d8b25a';
+      g.fillText(icon, x + cw / 2, y + ch / 2 + 1);
+    }
+  }
+}
+
+// --- Events from the world -----------------------------------------------------------
+let lastFloor = -1, endTimer = 0;
+function handleEvents() {
+  for (const e of world.events) {
+    switch (e.type) {
+      case 'shoot': sfx.shoot(); break;
+      case 'hit': sfx.hit(); break;
+      case 'kill': sfx.kill(); break;
+      case 'hurt':
+        sfx.hurt();
+        $('hurt-flash').classList.add('on');
+        setTimeout(() => $('hurt-flash').classList.remove('on'), 60);
+        if (navigator.vibrate) navigator.vibrate(60);
+        break;
+      case 'dash': sfx.dash(); break;
+      case 'door': sfx.door(); break;
+      case 'clear': sfx.clear(); break;
+      case 'coin': sfx.coin(); break;
+      case 'xp': sfx.xp(); break;
+      case 'heal': sfx.heal(); break;
+      case 'explode': sfx.explode(); break;
+      case 'slam': sfx.slam(); break;
+      case 'item': {
+        const it = ITEMS[e.id];
+        sfx.item();
+        announce(`${it.icon} ${it.name}`, it.text);
+        break;
+      }
+      case 'transform': {
+        const t = TRANSFORMS[e.id];
+        setTimeout(() => announce(`${t.icon} ${t.name}!`, t.desc, 3.2), 2700);
+        break;
+      }
+      case 'boss':
+        sfx.boss();
+        $('boss-name').textContent = e.name.toUpperCase();
+        announce(e.name, 'Den har ventet på deg.');
+        break;
+      case 'bossdead': announce('Seier', world.floor + 1 < Cfg.FLOORS ? 'En luke åpner seg i gulvet …' : ''); break;
+      case 'floor':
+        if (world.floor !== lastFloor) {
+          lastFloor = world.floor;
+          announce(`${FLOOR_NAMES[world.floor]}`, ['Det lukter fukt og forråtnelse.', 'De døde ligger ikke stille her.', 'Bein på bein på bein.', 'Herfra kommer ingen opp igjen.'][world.floor], 3);
+        }
+        break;
+      case 'levelup': sfx.levelup(); break;
+      case 'dead': sfx.dead(); break;
+      case 'won': sfx.win(); break;
+    }
+  }
+}
+
+// --- Main loop ---------------------------------------------------------------------
 let lastT = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
-
   if (mode === 'play' && world) {
-    const k = input.keys;
-    const kx = (k.ArrowRight || k.KeyD ? 1 : 0) - (k.ArrowLeft || k.KeyA ? 1 : 0);
-    if (kx) input.targetX = Math.max(-Cfg.LANE_HALF, Math.min(Cfg.LANE_HALF, input.targetX + kx * 10 * dt));
-    const firing = input.firing || !!k.Space;
-    const wasPlaying = world.state === 'playing';
-    // Two half steps keep fast units from skipping through gates on slow frames.
-    world.update(dt / 2, input.targetX, firing, input.giant);
-    world.update(dt / 2, input.targetX, firing, false);
-    input.giant = false;
-
-    if (world.recoil > 0.9 && firing) sfx.shoot();
-    for (const e of world.events) {
-      if (e.type === 'pop') sfx.pop();
-      else if (e.type === 'text') sfx.gate();
-      else if (e.type === 'giant') sfx.giant();
-      else if (e.type === 'ring') sfx.boom();
-      else if (e.type === 'boss') flashBanner('BOSSEN KOMMER! 👹', 2.5);
-    }
-    if (world.gates.some((g) => g.flash > 0.95)) sfx.gate();
-    if (wasPlaying && world.state !== 'playing') {
-      if (world.state === 'won') sfx.win(); else sfx.lose();
-    }
-    if (world.state !== 'playing' && world.endTime > 1.6) showResult();
+    const [mx, mz] = moveVector();
+    world.update(dt / 2, mx, mz, input.dash);
+    world.update(dt / 2, mx, mz, false);
+    input.dash = false;
+    handleEvents();
     updateHud();
-  } else if (world) {
-    // Idle preview behind the menus: gates keep moving, the round is frozen.
-    if (mode === 'result') {
-      world.update(dt, world.cannonX, false, false);
-    } else {
-      world.time += dt;
-      world.animateGates(dt);
+    if (world.state === 'levelup') openLevelUp();
+    if (world.state === 'dead' || world.state === 'won') {
+      endTimer += dt;
+      if (endTimer > 1.6) { prog.recordRun(world); openEnd(); }
     }
+  } else if (world && mode !== 'pause' && mode !== 'levelup') {
+    world.time += dt;
   }
   renderer.render(dt);
+  if (world) world.events.length = 0;
 }
 
-openHub();
+openTitle();
 requestAnimationFrame(frame);
 
-// Console/test access: mob.world is the running round.
-window.mob = { get world() { return world; }, prog, renderer };
+// Console/test access
+window.dypet = { get world() { return world; }, renderer, prog, ENEMIES };
